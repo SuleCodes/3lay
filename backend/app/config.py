@@ -1,4 +1,5 @@
 import os
+import re
 from functools import lru_cache
 from typing import Any
 
@@ -58,6 +59,28 @@ class Settings(BaseSettings):
     email_from: str = "3lay <onboarding@resend.dev>"
 
     session_cookie_name: str = "3lay_session"
+
+    # Domain clients' forwarding addresses live on: a client with username
+    # `rolepay-agent` gets `rolepay-agent@<this>`. Must match the domain whose
+    # Cloudflare Email Routing catch-all sends to the ingest Worker.
+    client_forwarding_domain: str
+
+    # The storage the ingest function writes raw emails to, so deleting an
+    # account can also delete that client's stored data. Same values as the
+    # function's FUNCTION:INGEST_STORAGE_* / FUNCTION:RAW_CONTAINER_NAME --
+    # keep them in step if either changes. Set the connection string, or the
+    # account name to connect with DefaultAzureCredential instead.
+    ingest_storage_connection_string: str | None = None
+    ingest_storage_account_name: str | None = None
+    raw_container_name: str = "raw-ingest"
+
+    @field_validator("client_forwarding_domain")
+    @classmethod
+    def _normalize_domain(cls, value: str) -> str:
+        domain = value.strip().lower().lstrip("@")
+        if not re.fullmatch(r"(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}", domain):
+            raise ValueError(f"CLIENT_FORWARDING_DOMAIN must be a domain like in.3lay.live, got '{value}'")
+        return domain
 
     @field_validator("database_url")
     @classmethod

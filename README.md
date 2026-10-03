@@ -31,9 +31,12 @@ deployment and troubleshooting details.
 
 There's no password. A user enters their email, the backend emails them a
 short-lived, single-use magic link, and clicking it signs them in — creating
-their account on first use. On that first sign-in, an API key is generated
-automatically. That key (not the session) is what a user's own backend would
-use to call the 3lay API later.
+their account on first use. New users then choose a **username**, e.g.
+`rolepay-agent`. That gives them their forwarding address,
+`rolepay-agent@in.3lay.live` (`{username}@{BACKEND:CLIENT_FORWARDING_DOMAIN}`),
+which their end users forward documents to. The same step creates their first
+API key. That key (not the session) is what a user's own backend would use to
+call the 3lay API later. See [backend/README.md](backend/README.md#sign-up-and-onboarding).
 
 Two separate credentials exist by design:
 - **Session cookie** (httpOnly JWT): how the logged-in browser talks to the
@@ -98,7 +101,7 @@ its own key prefix (the prefix is trimmed on load):
 
 | Component | Where the connection string goes | Keys |
 |---|---|---|
-| Backend | `backend/.env`, or the app's env vars | `BACKEND:DATABASE_URL`, `BACKEND:JWT_SECRET`, `BACKEND:JWT_EXPIRE_MINUTES`, `BACKEND:MAGIC_LINK_EXPIRE_MINUTES`, `BACKEND:FRONTEND_URL`, `BACKEND:SESSION_COOKIE_NAME`, `BACKEND:RESEND_API_KEY`, `BACKEND:EMAIL_FROM` |
+| Backend | `backend/.env`, or the app's env vars | `BACKEND:DATABASE_URL`, `BACKEND:JWT_SECRET`, `BACKEND:JWT_EXPIRE_MINUTES`, `BACKEND:MAGIC_LINK_EXPIRE_MINUTES`, `BACKEND:FRONTEND_URL`, `BACKEND:CLIENT_FORWARDING_DOMAIN`, `BACKEND:SESSION_COOKIE_NAME`, `BACKEND:RESEND_API_KEY`, `BACKEND:EMAIL_FROM`, `BACKEND:INGEST_STORAGE_CONNECTION_STRING`, `BACKEND:RAW_CONTAINER_NAME` |
 | Frontend | `frontend/.env.local`, or the build/host env | `FRONTEND:NEXT_PUBLIC_API_URL` |
 | Ingest function | `infra/function/local.settings.json`, or the Function App's app settings | `FUNCTION:API_KEY`, `FUNCTION:INGEST_STORAGE_CONNECTION_STRING`, `FUNCTION:INGEST_QUEUE_NAME`, `FUNCTION:RAW_CONTAINER_NAME` |
 

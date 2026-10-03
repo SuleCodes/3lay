@@ -44,6 +44,87 @@ Or use **Backend + Frontend** in VS Code's Run and Debug panel, which runs
 the same uvicorn command. It doesn't run migrations, so run
 `alembic upgrade head` yourself after pulling schema changes.
 
+## Sign-up and onboarding
+
+1. **Sign-in link:** `POST /auth/request-link` emails a magic link. Opening
+   it calls `GET /auth/verify`, which signs the user in and, on first use,
+   creates their account. **No API key is created at this point.** The
+   response includes `needs_username: true` until onboarding is done.
+2. **Choose a username:** `POST /account/username` with
+   `{"username": "rolepay-agent"}`. This is the onboarding step, and it:
+   - saves the username, which can't be changed afterwards, because the
+     client's end users will be forwarding mail to it;
+   - gives the client their forwarding address:
+     `{username}@{CLIENT_FORWARDING_DOMAIN}`, e.g.
+     `rolepay-agent@in.3lay.live`;
+   - creates their first API key, returning the raw key **once**.
+
+   The username and key are saved together, so either both happen or neither
+   does. While typing, the UI can call
+   `GET /account/username-availability?username=...`, which returns
+   `available`, a `reason` if not, and the resulting address.
+3. **More keys:** `POST /api-keys` works only once a username is set (`409`
+   before that).
+
+`GET /auth/me` returns `username` and `forwarding_address`; both are `null`
+until onboarding.
+
+**Username rules** (`app/usernames.py`): 3–32 characters, lowercase letters,
+digits and single hyphens, starting and ending with a letter or digit.
+Input is lowercased, so `RolePay-Agent` is saved as `rolepay-agent`, and
+usernames are unique regardless of case. Mail-system and 3lay names such as
+`postmaster`, `admin`, `noreply`, `support` and `3lay` are reserved. The rules
+are deliberately stricter than email allows, because the username also
+becomes the client's blob folder name and the Worker's `X-3lay-Client`
+header.
+
+| Response from `POST /account/username` | When |
+|---|---|
+| `201` | Claimed. Body: the user, plus the new API key. |
+| `409` | Username already taken, or this user already has one. |
+| `422` | Breaks the username rules; `detail` says which. |
+
+The forwarding address isn't stored. It's built from `username` and
+`BACKEND:CLIENT_FORWARDING_DOMAIN`, a required setting that must match the
+domain whose Cloudflare Email Routing catch-all sends to the ingest Worker.
+
+## Deleting an account
+
+`DELETE /account` with `{"confirm_email": "<the account's email>"}`. This is
+the **Delete account** button in the dashboard's Danger zone. It permanently
+removes, in this order:
+
+1. **Every stored email for the client:** all blobs under
+   `<forwarding_address>/` in the ingest storage container. This runs first:
+   if it fails, nothing else has been touched and the user can retry, and it
+   avoids leaving documents behind with no account to delete them from.
+2. **The database rows, in one transaction:** the user, their API keys
+   (cascade) and their sign-in tokens.
+3. **The session:** the cookie is cleared. Sessions on other devices stop
+   working on their next request.
+
+The **username is retired**: it goes into `app.retired_usernames`, which
+holds only the name and never links back to the deleted user. Retired names
+can't be claimed again. Otherwise someone new could take `rolepay-agent` and
+start receiving documents that the old client's end users still forward
+there. The same email can sign up again later as a new account, with a new
+username.
+
+| Response | When |
+|---|---|
+| `200` | Deleted. `deleted_stored_items` says how many stored emails were removed. |
+| `400` | `confirm_email` doesn't match the account's email (case-insensitive). |
+| `502` | Deleting the stored emails failed. Nothing was deleted; safe to retry. |
+| `503` | Ingest storage isn't configured (see below). Nothing was deleted. |
+
+The backend needs access to the ingest storage account for this:
+`BACKEND:INGEST_STORAGE_CONNECTION_STRING` (or
+`BACKEND:INGEST_STORAGE_ACCOUNT_NAME` for managed identity) and
+`BACKEND:RAW_CONTAINER_NAME`. These duplicate the function's `FUNCTION:`
+values, so **update both if the storage key is rotated**. Queue messages
+already waiting for the deleted client aren't removed. A job processor
+should treat a missing blob as "deleted, skip".
+
 ## Database
 
 Supabase is used purely as a **Postgres host**. The backend connects directly

@@ -7,9 +7,9 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.database import get_db
 from app.dependencies import get_current_user
-from app.models import ApiKey, MagicLinkToken, User
+from app.models import MagicLinkToken, User
 from app.schemas import RequestLinkIn, RequestLinkOut, UserOut, VerifyOut
-from app.security import create_session_token, ensure_aware, hash_token, new_api_key, new_magic_link_token
+from app.security import create_session_token, ensure_aware, hash_token, new_magic_link_token
 from app.services.email import EmailDeliveryError, send_magic_link_email
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -65,22 +65,19 @@ def verify(token: str, response: Response, db: Session = Depends(get_db)) -> Ver
     record.used_at = now
 
     user = db.query(User).filter_by(email=record.email).first()
-    created_api_key: str | None = None
 
     if not user:
+        # Sign-up. No API key yet: the user first picks a username
+        # (POST /account/username), which creates their first key.
         user = User(email=record.email)
         db.add(user)
-        db.flush()  # populate user.id before we reference it below
-
-        raw_key, prefix, key_hash = new_api_key()
-        db.add(ApiKey(user_id=user.id, name="Default key", prefix=prefix, key_hash=key_hash))
-        created_api_key = raw_key
 
     db.commit()
+    db.refresh(user)
 
     _set_session_cookie(response, user.id)
 
-    return VerifyOut(user=UserOut.model_validate(user), created_api_key=created_api_key)
+    return VerifyOut(user=UserOut.model_validate(user), needs_username=user.username is None)
 
 
 @router.post("/logout")

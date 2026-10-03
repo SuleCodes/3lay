@@ -2,6 +2,14 @@ export interface User {
   id: string;
   email: string;
   created_at: string;
+  // Both null until the user has chosen a username during onboarding.
+  username: string | null;
+  forwarding_address: string | null;
+}
+
+export interface DeleteAccountResponse {
+  message: string;
+  deleted_stored_items: number;
 }
 
 export interface ApiKey {
@@ -15,7 +23,21 @@ export interface ApiKey {
 
 export interface VerifyResponse {
   user: User;
-  created_api_key: string | null;
+  // True until the user has chosen a username (/onboarding), which is also
+  // what creates their first API key.
+  needs_username: boolean;
+}
+
+export interface UsernameAvailability {
+  username: string;
+  available: boolean;
+  reason: string | null;
+  forwarding_address: string | null;
+}
+
+export interface UsernameClaimedResponse {
+  user: User;
+  api_key: ApiKeyCreatedResponse;
 }
 
 export interface ApiKeyCreatedResponse {

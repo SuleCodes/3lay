@@ -32,6 +32,13 @@ def create_api_key(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> ApiKeyCreatedOut:
+    if not current_user.username:
+        # Keys belong to a client account, which starts with the username step.
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Choose a username before creating API keys.",
+        )
+
     raw_key, prefix, key_hash = new_api_key()
     key = ApiKey(user_id=current_user.id, name=payload.name, prefix=prefix, key_hash=key_hash)
     db.add(key)

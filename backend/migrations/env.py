@@ -23,6 +23,15 @@ if config.config_file_name is not None:
 target_metadata = Base.metadata
 
 
+def _include_name(name, type_, parent_names):
+    # Don't even read other schemas when comparing. Supabase's (auth,
+    # realtime, storage, ...) are large, use types SQLAlchemy doesn't know,
+    # and are none of our business.
+    if type_ == "schema":
+        return name == DB_SCHEMA
+    return True
+
+
 def _include_object(object, name, type_, reflected, compare_to):
     # Only manage our own schema. Supabase keeps its own tables in `auth`,
     # `storage`, `public` etc.; autogenerate must never try to drop those.
@@ -40,6 +49,7 @@ def run_migrations_offline() -> None:
         dialect_opts={"paramstyle": "named"},
         version_table_schema=DB_SCHEMA,
         include_schemas=True,
+        include_name=_include_name,
         include_object=_include_object,
     )
     with context.begin_transaction():
@@ -64,6 +74,7 @@ def run_migrations_online() -> None:
             target_metadata=target_metadata,
             version_table_schema=DB_SCHEMA,
             include_schemas=True,
+            include_name=_include_name,
             include_object=_include_object,
         )
         with context.begin_transaction():
