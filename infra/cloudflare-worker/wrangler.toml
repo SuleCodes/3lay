@@ -1,0 +1,22 @@
+# Must match the Worker's name in the Cloudflare dashboard -- `wrangler deploy`
+# updates the Worker with this name (or creates it if none exists).
+name = "3lay-cell-82f0"
+main = "worker.js"
+compatibility_date = "2026-10-01"
+
+[vars]
+# Base URL of the Azure Function App, ending in .net -- no /api/ingest.
+# The Worker appends /api/ingest itself.
+FUNCTION_URL = "https://func-3lay-injest-fhcnhphjd9amf6fv.uksouth-01.azurewebsites.net"
+
+# FUNCTION_KEY and INGEST_API_KEY are secrets, not vars -- set them with:
+#   npx wrangler secret put FUNCTION_KEY
+#   npx wrangler secret put INGEST_API_KEY
+# INGEST_API_KEY must match FUNCTION:API_KEY in App Configuration.
+# For local testing, put both in .dev.vars instead (FUNCTION_KEY can be
+# anything, since the local Functions host doesn't check it) and run:
+#   npx wrangler dev --var FUNCTION_URL:http://localhost:7071
+#
+# Emails reach this Worker via Email Routing: in the Cloudflare dashboard,
+# go to your domain -> Email -> Email Routing -> Routing rules, and route the
+# addresses (or the catch-all) to this Worker.

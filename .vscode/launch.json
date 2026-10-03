@@ -1,0 +1,38 @@
+{
+  // Run and Debug panel (Ctrl+Shift+D): pick "Backend + Frontend" and press F5
+  // to start both. Each can also be run on its own.
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Backend (FastAPI :8000)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "uvicorn",
+      "args": ["app.main:app", "--reload", "--port", "8000"],
+      "cwd": "${workspaceFolder}/backend",
+      "python": "${workspaceFolder}/backend/.venv/bin/python",
+      "windows": {
+        "python": "${workspaceFolder}/backend/.venv/Scripts/python.exe"
+      },
+      "env": {
+        "PYTHONUNBUFFERED": "1"
+      },
+      "console": "integratedTerminal",
+      "justMyCode": true
+    },
+    {
+      "name": "Frontend (Next.js :3000)",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "npm run dev",
+      "cwd": "${workspaceFolder}/frontend"
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Backend + Frontend",
+      "configurations": ["Backend (FastAPI :8000)", "Frontend (Next.js :3000)"],
+      "stopAll": true
+    }
+  ]
+}

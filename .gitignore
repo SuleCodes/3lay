@@ -1,0 +1,27 @@
+# Python
+backend/.venv/
+backend/__pycache__/
+backend/**/__pycache__/
+backend/*.db
+backend/.env
+
+# Node / Next.js
+frontend/node_modules/
+frontend/.next/
+frontend/.env.local
+
+# OS
+.DS_Store
+
+# Azure Functions
+infra/function/.venv/
+infra/function/**/__pycache__/
+infra/function/local.settings.json
+__azurite_db*
+infra/function/.azurite/
+__blobstorage__/
+__queuestorage__/
+
+# Cloudflare Worker local secrets
+infra/cloudflare-worker/.dev.vars
+infra/cloudflare-worker/.wrangler/
