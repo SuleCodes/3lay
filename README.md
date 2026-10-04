@@ -68,7 +68,9 @@ sender ──► anything@in.3lay.live
              │  Cloudflare Email Routing (catch-all on in.3lay.live)
              ▼
            Cloudflare Worker 3lay-cell-82f0
-             │  POST /api/ingest + raw email (.eml)
+             │  1. GET api.3lay.live/internal/recipients/<address>
+             │     unknown address → bounce "Address not found"
+             │  2. POST /api/ingest + raw email (.eml)
              │  X-3lay-Client  = recipient address
              │  X-3lay-Origin  = sender address (From header)
              │  function key + X-3lay-Api-Key
@@ -85,9 +87,11 @@ sender ──► anything@in.3lay.live
 - **Errors:** if the function rejects the addresses (`400`), the Worker
   bounces the email. If the function is down or misconfigured, the Worker
   throws instead, so we don't bounce mail because of our own problem.
-- **Not yet built:** checking that the recipient is a paying client (planned:
-  a Workers KV allowlist kept in sync by the backend), and processing the
-  queued jobs.
+- **Only registered clients:** the Worker asks the backend whether the
+  recipient is `{username}@in.3lay.live` for an existing account, and bounces
+  everything else before it's stored.
+- **Not yet built:** checking the client is *paying* (today any registered
+  account passes), and processing the queued jobs.
 
 Details: [infra/function/README.md](infra/function/README.md) and
 [infra/cloudflare-worker/README.md](infra/cloudflare-worker/README.md).
@@ -101,13 +105,15 @@ its own key prefix (the prefix is trimmed on load):
 
 | Component | Where the connection string goes | Keys |
 |---|---|---|
-| Backend | `backend/.env`, or the app's env vars | `BACKEND:DATABASE_URL`, `BACKEND:JWT_SECRET`, `BACKEND:JWT_EXPIRE_MINUTES`, `BACKEND:MAGIC_LINK_EXPIRE_MINUTES`, `BACKEND:FRONTEND_URL`, `BACKEND:CLIENT_FORWARDING_DOMAIN`, `BACKEND:SESSION_COOKIE_NAME`, `BACKEND:RESEND_API_KEY`, `BACKEND:EMAIL_FROM`, `BACKEND:INGEST_STORAGE_CONNECTION_STRING`, `BACKEND:RAW_CONTAINER_NAME` |
+| Backend | `backend/.env`, or the app's env vars | `BACKEND:DATABASE_URL`, `BACKEND:JWT_SECRET`, `BACKEND:JWT_EXPIRE_MINUTES`, `BACKEND:MAGIC_LINK_EXPIRE_MINUTES`, `BACKEND:FRONTEND_URL`, `BACKEND:CLIENT_FORWARDING_DOMAIN`, `BACKEND:SESSION_COOKIE_NAME`, `BACKEND:RESEND_API_KEY`, `BACKEND:EMAIL_FROM`, `BACKEND:INGEST_STORAGE_CONNECTION_STRING`, `BACKEND:RAW_CONTAINER_NAME`, `BACKEND:INTERNAL_API_KEY` |
 | Frontend | `frontend/.env.local`, or the build/host env | `FRONTEND:NEXT_PUBLIC_API_URL` |
 | Ingest function | `infra/function/local.settings.json`, or the Function App's app settings | `FUNCTION:API_KEY`, `FUNCTION:INGEST_STORAGE_CONNECTION_STRING`, `FUNCTION:INGEST_QUEUE_NAME`, `FUNCTION:RAW_CONTAINER_NAME` |
 
 The Cloudflare Worker is the exception. It can't read App Configuration, so
-its settings live in Cloudflare: `FUNCTION_URL` in `wrangler.toml`, and the
-`FUNCTION_KEY` and `INGEST_API_KEY` secrets.
+its settings live in Cloudflare: `FUNCTION_URL` and `BACKEND_URL` in
+`wrangler.toml`, and the `FUNCTION_KEY` and `INGEST_API_KEY` secrets.
+`INGEST_API_KEY` is the Worker's one shared key. It must equal both
+`FUNCTION:API_KEY` and `BACKEND:INTERNAL_API_KEY`.
 
 - **Labels:** keys use the default (empty) label.
 - **Precedence:** local values win. A value set on your machine overrides App

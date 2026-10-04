@@ -88,6 +88,24 @@ The forwarding address isn't stored. It's built from `username` and
 `BACKEND:CLIENT_FORWARDING_DOMAIN`, a required setting that must match the
 domain whose Cloudflare Email Routing catch-all sends to the ingest Worker.
 
+## Internal endpoints (for the email Worker)
+
+`GET /internal/recipients/{address}` answers "is this a client's forwarding
+address?" for the Cloudflare email Worker, which bounces mail for anything
+that isn't:
+- **`200`** `{"address": ..., "username": ...}`: yes. The match is exact:
+  `{username}@{CLIENT_FORWARDING_DOMAIN}`, case-insensitive. No
+  plus-addressing, other domains or retired usernames.
+- **`404`** `{"detail": "Unknown recipient"}`: no.
+- **`401`**: missing or wrong `X-3lay-Internal-Key` header.
+
+The key is `BACKEND:INTERNAL_API_KEY` in App Configuration. It holds the same
+value as `FUNCTION:API_KEY`, because the Worker sends its one `INGEST_API_KEY`
+secret to both. It's checked in constant time and fails closed: if
+the setting is missing, every request gets `401`. These endpoints are left
+out of the public API docs (`/docs`). To rotate it, change all three together (see "Changing the API key" in the
+Worker README).
+
 ## Deleting an account
 
 `DELETE /account` with `{"confirm_email": "<the account's email>"}`. This is

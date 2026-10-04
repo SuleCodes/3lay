@@ -47,7 +47,8 @@ dashboard, change `name` too.
 |---|---|---|
 | `FUNCTION_URL` | Variable, in `wrangler.toml` | Base URL of the Function App, ending in `.net`. **Don't add `/api/ingest`**: the Worker appends it, so including it would call `/api/ingest/api/ingest` and every email would fail with `404`. |
 | `FUNCTION_KEY` | **Secret** | Function key for the `ingest` function, from Azure portal → Function App → Functions → `ingest` → Function Keys. |
-| `INGEST_API_KEY` | **Secret** | The 3lay API key, sent as `X-3lay-Api-Key`. Must exactly match `FUNCTION:API_KEY` in App Configuration. |
+| `INGEST_API_KEY` | **Secret** | The 3lay API key. The Worker's one shared key, sent to the function (`X-3lay-Api-Key`) **and** the backend (`X-3lay-Internal-Key`). Must exactly match both `FUNCTION:API_KEY` and `BACKEND:INTERNAL_API_KEY` in App Configuration, which hold the same value. |
+| `BACKEND_URL` | Variable, in `wrangler.toml` | The 3lay API, `https://api.3lay.live`. Used to check each recipient is a client. |
 
 The function needs both keys. The function key gets the request past Azure,
 and the API key is checked by the function itself (see
@@ -56,7 +57,29 @@ secrets, never plain variables. Anyone holding them can write into any
 client's folder.
 
 If `INGEST_API_KEY` isn't set, the Worker throws on every email instead of
-calling the function.
+processing it.
+
+## Recipient check
+
+Before forwarding, the Worker asks the backend whether the recipient is a
+registered client:
+`GET {BACKEND_URL}/internal/recipients/{address}`, authenticated with
+`INGEST_API_KEY`. Only exact `{username}@in.3lay.live` addresses of existing
+accounts pass. Plus-addressing, other domains and deleted accounts don't.
+
+| Backend answer | Worker does |
+|---|---|
+| `200` | Forwards the email to the ingest function as usual. |
+| `404` with `"Unknown recipient"` | **Bounces** it: the sender gets "Address not found". Nothing is stored. |
+| Anything else: unreachable, `401` (wrong key), any other `404`, `5xx`, or no reply within 30 s | **Throws**, so the email isn't bounced. A problem on our side never rejects a real client's mail. |
+
+The backend scales to zero, so the first email after an idle spell waits for
+its cold start, typically a few seconds and well inside the 30 s timeout.
+
+Only that specific `"Unknown recipient"` 404 bounces. A plain 404, such as
+from a backend that doesn't have the endpoint yet or a wrong `BACKEND_URL`, is
+treated as an error. So deploying the Worker before the backend can't cause
+every client's mail to bounce.
 
 ## Prerequisites
 
@@ -183,9 +206,10 @@ where emails fail. Do it at a quiet time, and do these steps back to back:
    python -c "import secrets; print(secrets.token_urlsafe(32))"
    ```
 
-2. Update `FUNCTION:API_KEY` in App Configuration.
-3. Restart the Function App (Azure portal → Function App → **Restart**). It
-   only reads App Configuration at startup.
+2. Update `FUNCTION:API_KEY` **and** `BACKEND:INTERNAL_API_KEY` in App
+   Configuration, both to the new value.
+3. Restart the Function App (Azure portal → Function App → **Restart**) and
+   the backend container app. Both only read App Configuration at startup.
 4. Update the Worker:
 
    ```bash
@@ -250,8 +274,10 @@ domain's catch-all is **enabled** and set to **Send to a Worker** →
 
 Each email that reaches the Worker logs one line:
 - `Ingested <id>: <origin> -> <client> (<n> bytes)`: stored.
-- `Rejected <origin> -> <client>: ...`: the function refused the addresses,
-  and the sender got a bounce.
+- `Rejected <origin> -> <client>: not a client address`: the recipient isn't
+  a registered client, and the sender got a bounce.
+- `Rejected <origin> -> <client>: ...` (other reason): the function refused
+  the addresses, and the sender got a bounce.
 - An exception: something on our side is wrong, and the email wasn't
   bounced.
   - `INGEST_API_KEY secret is not set`: add the secret.
@@ -260,6 +286,11 @@ Each email that reaches the Worker logs one line:
     hasn't been restarted since the key changed.
   - `Ingest function returned 401` with an empty body: Azure rejected
     `FUNCTION_KEY`.
+  - `Recipient check failed: backend returned 401`: `INGEST_API_KEY` doesn't
+    match `BACKEND:INTERNAL_API_KEY`, or the backend was started before the
+    key was set (restart it).
+  - `Recipient check failed (backend unreachable)` or `returned 5xx`: check
+    `BACKEND_URL`, and that the backend's container app is running.
   - `Ingest function returned 404`: `FUNCTION_URL` probably ends in
     `/api/ingest`. It should be just the base `.net` URL.
   - `Ingest function unreachable` or `returned 5xx`: check `FUNCTION_URL`,
@@ -284,7 +315,7 @@ Each email that reaches the Worker logs one line:
 3. Run the Worker, pointed at the local function:
 
    ```bash
-   npx wrangler dev --var FUNCTION_URL:http://localhost:7071
+   npx wrangler dev --var FUNCTION_URL:http://localhost:7071 --var BACKEND_URL:http://localhost:8000
    ```
 
 4. Send it a test email. `from` and `to` are the envelope addresses, and the

@@ -9,10 +9,17 @@ compatibility_date = "2026-10-01"
 # The Worker appends /api/ingest itself.
 FUNCTION_URL = "https://func-3lay-injest-fhcnhphjd9amf6fv.uksouth-01.azurewebsites.net"
 
+# The 3lay backend API. Before forwarding, the Worker checks each recipient is
+# a registered client's address (GET /internal/recipients/{address}) and
+# bounces the rest. Authenticated with the INGEST_API_KEY secret.
+BACKEND_URL = "https://api.3lay.live"
+
 # FUNCTION_KEY and INGEST_API_KEY are secrets, not vars -- set them with:
 #   npx wrangler secret put FUNCTION_KEY
 #   npx wrangler secret put INGEST_API_KEY
-# INGEST_API_KEY must match FUNCTION:API_KEY in App Configuration.
+# INGEST_API_KEY is sent to both the function and the backend, so it must
+# match FUNCTION:API_KEY and BACKEND:INTERNAL_API_KEY in App Configuration
+# (all three hold the same value).
 # For local testing, put both in .dev.vars instead (FUNCTION_KEY can be
 # anything, since the local Functions host doesn't check it) and run:
 #   npx wrangler dev --var FUNCTION_URL:http://localhost:7071

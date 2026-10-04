@@ -65,6 +65,11 @@ class Settings(BaseSettings):
     # Cloudflare Email Routing catch-all sends to the ingest Worker.
     client_forwarding_domain: str
 
+    # Shared secret the Cloudflare email Worker sends (X-3lay-Internal-Key) to
+    # call /internal/* endpoints, e.g. to check a recipient address belongs to
+    # a client. Unset = those endpoints refuse every request.
+    internal_api_key: str | None = None
+
     # The storage the ingest function writes raw emails to, so deleting an
     # account can also delete that client's stored data. Same values as the
     # function's FUNCTION:INGEST_STORAGE_* / FUNCTION:RAW_CONTAINER_NAME --
