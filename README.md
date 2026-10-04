@@ -13,8 +13,8 @@ The extraction engine (turning stored inputs into structured data) and
 outbound webhooks come next, on top of these.
 
 ```
-backend/                  FastAPI + SQLAlchemy + Postgres (Supabase), migrations via Alembic
-frontend/                 Next.js (App Router) + Tailwind
+backend/                  FastAPI + SQLAlchemy + Postgres (Supabase), migrations via Alembic; ships as a container
+frontend/                 Next.js (App Router) + Tailwind, exported as a static site
 infra/function/           Azure Function: stores raw inputs in Blob Storage, queues a job
 infra/cloudflare-worker/  Cloudflare Email Worker: receives inbound email, calls the function
 .vscode/launch.json       Run and debug the backend and frontend together
@@ -110,8 +110,17 @@ its settings live in Cloudflare: `FUNCTION_URL` in `wrangler.toml`, and the
 `FUNCTION_KEY` and `INGEST_API_KEY` secrets.
 
 - **Labels:** keys use the default (empty) label.
-- **Precedence:** a real environment variable overrides the App Configuration
-  value for the same key, and App Configuration overrides the env file.
+- **Precedence:** local values win. A value set on your machine overrides App
+  Configuration for that key, so you can point local runs elsewhere without
+  changing the shared config. Order: real environment variable, then the
+  local file (`backend/.env`, `frontend/.env.local`, the function's
+  `local.settings.json`), then App Configuration. Deployed apps have no local
+  files, so they use App Configuration.
+  - Example: `FRONTEND:NEXT_PUBLIC_API_URL` holds the deployed API URL, while
+    `NEXT_PUBLIC_API_URL=http://localhost:8000` in `frontend/.env.local` keeps
+    your local dev server on your local backend.
+  - Only add a local value when you mean to override. A stale one silently
+    shadows App Configuration.
 - **Restarts:** each component reads App Configuration once at startup, so
   restart it after changing a value.
 - **Key Vault:** secrets can be stored as Key Vault references. These resolve
@@ -143,10 +152,15 @@ migrations.
 | Database | Supabase project (Postgres 17, region eu-west-1), schema `app` |
 | Ingest function | Azure Function App `func-3lay-injest` (resource group `rg-3lay-prod`, UK South) |
 | Raw storage | Storage account `rawinjest3layprod`: container `rawinjest3layprod`, queue `ingest-jobs` |
+| Backend image | Azure Container Registry `containerreg3lay` (`containerreg3lay.azurecr.io/3lay-backend`) |
+| Frontend | Azure Static Web App (Free plan) at `app.3lay.live`; see [frontend/README.md](frontend/README.md#deploying) |
 | Email Worker | Cloudflare Worker `3lay-cell-82f0` |
 | Ingest email domain | `in.3lay.live`, a catch-all routed to the Worker. Mail to `@3lay.live` itself is not ingested. |
 
-The backend and frontend aren't deployed yet; they run locally.
+The backend image is built and pushed to the registry, but nothing runs it
+yet. Creating the Azure app that runs it is the next step; see
+[backend/README.md](backend/README.md#deploying-container). The frontend isn't
+deployed yet.
 
 ## Running it locally
 

@@ -15,6 +15,13 @@ const APP_CONFIG_PREFIX = "FRONTEND:";
  * at build time), everything else stays server-only. Deliberately not using
  * next.config's `env` option -- that would ship every value, secrets included,
  * to the browser. Key Vault references resolve via DefaultAzureCredential.
+ *
+ * Local values win: anything already set -- in .env.local (Next.js loads it
+ * before this file runs) or as a real env var -- is kept, and App
+ * Configuration only fills in what's missing. So e.g. NEXT_PUBLIC_API_URL in
+ * .env.local points a local dev server at a local backend while the shared
+ * config keeps the deployed URL. A deployed build has no .env.local, so it
+ * gets App Configuration's values.
  */
 async function loadAppConfiguration(): Promise<void> {
   const connectionString = process.env.APP_CONFIG_CONNECTION_STRING;
@@ -27,11 +34,23 @@ async function loadAppConfiguration(): Promise<void> {
   });
 
   for (const [key, value] of settings) {
-    process.env[key] = String(value);
+    if (process.env[key] === undefined || process.env[key] === "") {
+      process.env[key] = String(value);
+    }
   }
 }
 
 export default async function config(): Promise<NextConfig> {
   await loadAppConfiguration();
-  return {};
+  return {
+    // The app is entirely client-side (all data comes from the backend API),
+    // so `next build` emits a plain static site into out/, hosted on Azure
+    // Static Web Apps. This rules out server-only features -- route
+    // handlers, server actions, cookies(), rewrites/redirects, default image
+    // optimization; see next/dist/docs/01-app/02-guides/static-exports.md.
+    output: "export",
+    // Emit /dashboard/index.html rather than /dashboard.html, so every route
+    // is a folder any static host serves without rewrite rules.
+    trailingSlash: true,
+  };
 }

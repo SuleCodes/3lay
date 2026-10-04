@@ -59,3 +59,19 @@ def decode_session_token(token: str) -> str | None:
         return payload.get("sub")
     except jwt.PyJWTError:
         return None
+
+
+def session_cookie_options() -> dict:
+    """Attributes for the session cookie, shared by setting and clearing it
+    (browsers only clear a cookie when the attributes match).
+
+    `secure` follows the frontend's scheme: on for https deployments, where
+    the browser then only sends the cookie over HTTPS; off for local
+    http://localhost, where a secure cookie would never be sent. SameSite=Lax
+    works because the frontend and API share a site (app.3lay.live and
+    api.3lay.live, or localhost)."""
+    return {
+        "httponly": True,
+        "samesite": "lax",
+        "secure": settings.frontend_url.lower().startswith("https://"),
+    }

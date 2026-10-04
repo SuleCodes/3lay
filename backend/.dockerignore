@@ -1,0 +1,16 @@
+# Keep secrets, local state and dev tooling out of the image and the build
+# upload. The Dockerfile copies only what it needs, but `az acr build` uploads
+# this whole folder as the build context first -- this keeps that small and
+# secret-free.
+.env
+.env.*
+!.env.example
+.venv/
+**/__pycache__/
+*.pyc
+*.db
+.pytest_cache/
+.mypy_cache/
+Dockerfile
+.dockerignore
+README.md

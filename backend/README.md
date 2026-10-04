@@ -310,3 +310,101 @@ This prints the SQL a migration would run, without changing anything.
 | `alembic check` reports changes you didn't make | Someone changed the schema outside migrations (e.g. in the dashboard), or a model changed without a migration. |
 | `Target database is not up to date` when generating a migration | Run `alembic upgrade head` first, then generate. |
 | `prepared statement "..." already exists` | Shouldn't happen: the engine disables prepared statements for Supabase's pooler. If you create another engine, pass `connect_args={"prepare_threshold": None}`. |
+
+## Deploying (container)
+
+The backend ships as a container image, built from `Dockerfile`, and stored
+in the Azure Container Registry **`containerreg3lay`**
+(`containerreg3lay.azurecr.io`, resource group `rg-3lay-prod`). A container
+host, such as Azure Container Apps, pulls the image from there and runs it.
+
+| | |
+|---|---|
+| Image | `containerreg3lay.azurecr.io/3lay-backend:<tag>` |
+| Tags | A UTC timestamp per build (e.g. `20261004-0853`), plus `latest` |
+| Base | `python:3.11-slim`, running as a non-root user |
+| Port | `8000` |
+| Health check | `GET /health` → `{"status": "ok"}` |
+| Config | **Only** the `APP_CONFIG_CONNECTION_STRING` env var. Everything else comes from App Configuration at startup. |
+
+No `.env`, venv or local database goes into the image (`.dockerignore`), so
+the image contains no secrets.
+
+### Build and push
+
+Docker isn't needed locally. `az acr build` uploads this folder (minus
+`.dockerignore`) and builds the image in Azure. From `backend/`:
+
+1. Log in. The account needs push rights on the registry (AcrPush, or
+   Owner/Contributor):
+
+   ```bash
+   az login
+   ```
+
+2. Build and push, tagged with the current UTC time and as `latest`:
+
+   ```bash
+   az acr build --registry containerreg3lay --image 3lay-backend:$(date -u +%Y%m%d-%H%M) --image 3lay-backend:latest --no-logs .
+   ```
+
+   In PowerShell, use `$(Get-Date -AsUTC -Format yyyyMMdd-HHmm)` for the tag
+   instead.
+
+3. Check it finished. `Succeeded` means the image is in the registry. A build
+   takes about a minute.
+
+   ```bash
+   az acr task list-runs --registry containerreg3lay --top 1 --query "[0].{run:runId,status:status}" -o table
+   ```
+
+**Why `--no-logs`:** on Windows, the Azure CLI crashes while streaming the
+build log (`UnicodeEncodeError: 'charmap' codec ...`). The build itself
+carries on in Azure, but the command reports an error. `--no-logs` avoids
+this. To read a build's log, go to the portal: **Container registry →
+Services → Tasks → Runs → (run)**.
+
+To list the images in the registry:
+
+```bash
+az acr repository show-tags --name containerreg3lay --repository 3lay-backend --orderby time_desc -o table
+```
+
+### Release checklist
+
+1. **Migrations first.** If the release includes new migrations, apply them
+   before the new image starts serving: `alembic upgrade head`, from your
+   machine as in [Migrations](#migrations). The container deliberately
+   doesn't migrate on startup, because several replicas starting at once
+   would race each other. New code must also tolerate the old schema until
+   the migration runs, and the old code the new schema.
+2. **Build and push** the image, as above.
+3. **Point the container host at the new tag,** then check `GET /health`.
+   Use the timestamp tag rather than `latest`, so you know exactly what's
+   running and can roll back.
+
+To **roll back**, point the host at the previous timestamp tag. The image is
+still in the registry. If a migration has to be undone too, see
+[Undo a migration](#undo-a-migration), but prefer a new forward migration.
+
+### What the container host needs
+
+This is the next step: creating the app in Azure that runs this image.
+
+- **Image:** `containerreg3lay.azurecr.io/3lay-backend:<tag>`, with target port
+  **8000** and external HTTPS ingress.
+- **Registry access:** give the app a **managed identity** with the
+  **AcrPull** role on `containerreg3lay`. Don't use the registry's admin
+  username and password. Once nothing uses them, turn off **Admin user** on
+  the registry.
+- **Secret:** `APP_CONFIG_CONNECTION_STRING`, stored as a secret and exposed
+  as that env var.
+- **Health probe:** `GET /health` on port 8000.
+- **Scaling:** minimum replicas **0** keeps it inside the free allowance,
+  with a cold start of a few seconds after idle. Set it to **1** to avoid
+  cold starts.
+- **Config to update for the deployed URLs:** `BACKEND:FRONTEND_URL` (magic
+  links and CORS) must be the deployed frontend's URL, e.g.
+  `https://app.3lay.live`.
+- **Before going live:** the session cookie needs `secure=True` once it's
+  served over HTTPS (see the TODO in `app/routers/auth.py`).

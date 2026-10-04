@@ -104,14 +104,16 @@ class Settings(BaseSettings):
         dotenv_settings: PydanticBaseSettingsSource,
         file_secret_settings: PydanticBaseSettingsSource,
     ) -> tuple[PydanticBaseSettingsSource, ...]:
-        # Highest priority first: a real env var can still override a single
-        # value, App Configuration is the normal source of truth, and .env is
-        # only a fallback for working offline without App Configuration.
+        # Highest priority first. App Configuration is the shared source of
+        # truth, but anything set locally -- a real env var, or a line in
+        # .env -- overrides it for this machine only, e.g. pointing a local
+        # run at a different database without touching the shared config.
+        # The deployed container has no .env, so it uses App Configuration.
         return (
             init_settings,
             env_settings,
-            AppConfigurationSource(settings_cls),
             dotenv_settings,
+            AppConfigurationSource(settings_cls),
             file_secret_settings,
         )
 

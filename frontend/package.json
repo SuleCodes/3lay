@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start",
+    "build:deploy": "node scripts/build-deploy.mjs",
+    "deploy": "npx --yes @azure/static-web-apps-cli deploy ./out --env production",
     "lint": "eslint"
   },
   "dependencies": {

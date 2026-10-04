@@ -18,7 +18,7 @@ from app.schemas import (
     UsernameClaimedOut,
     UsernameIn,
 )
-from app.security import new_api_key
+from app.security import new_api_key, session_cookie_options
 from app.services.storage import StorageNotConfiguredError, delete_client_blobs
 from app.usernames import normalize_username
 
@@ -152,5 +152,5 @@ def delete_account(
 
     # 3. Sign them out here. Sessions on other devices stop working on their
     #    next request, because the user they point to no longer exists.
-    response.delete_cookie(settings.session_cookie_name)
+    response.delete_cookie(settings.session_cookie_name, **session_cookie_options())
     return DeleteAccountOut(deleted_stored_items=deleted_blobs)

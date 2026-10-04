@@ -9,7 +9,13 @@ from app.database import get_db
 from app.dependencies import get_current_user
 from app.models import MagicLinkToken, User
 from app.schemas import RequestLinkIn, RequestLinkOut, UserOut, VerifyOut
-from app.security import create_session_token, ensure_aware, hash_token, new_magic_link_token
+from app.security import (
+    create_session_token,
+    ensure_aware,
+    hash_token,
+    new_magic_link_token,
+    session_cookie_options,
+)
 from app.services.email import EmailDeliveryError, send_magic_link_email
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -21,10 +27,8 @@ def _set_session_cookie(response: Response, user_id: str) -> None:
     response.set_cookie(
         key=settings.session_cookie_name,
         value=token,
-        httponly=True,
-        samesite="lax",
         max_age=settings.jwt_expire_minutes * 60,
-        # secure=True should be turned on once this is served over HTTPS.
+        **session_cookie_options(),
     )
 
 
@@ -38,7 +42,9 @@ def request_link(payload: RequestLinkIn, db: Session = Depends(get_db)) -> Reque
     db.commit()
 
     query = urlencode({"token": raw_token})
-    link = f"{settings.frontend_url}/auth/verify?{query}"
+    # Trailing slash: the frontend is a static export with trailingSlash, so
+    # /auth/verify/ is the real page (no redirect needed to keep ?token=).
+    link = f"{settings.frontend_url.rstrip('/')}/auth/verify/?{query}"
     try:
         send_magic_link_email(email, link)
     except EmailDeliveryError as exc:
@@ -82,7 +88,7 @@ def verify(token: str, response: Response, db: Session = Depends(get_db)) -> Ver
 
 @router.post("/logout")
 def logout(response: Response) -> dict[str, str]:
-    response.delete_cookie(settings.session_cookie_name)
+    response.delete_cookie(settings.session_cookie_name, **session_cookie_options())
     return {"message": "Logged out."}
 
 
