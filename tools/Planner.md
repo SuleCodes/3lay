@@ -145,11 +145,23 @@ The destination always comes from approved configuration, never from Obed's outp
   LangChain's chat-model interface (`provider:model` strings), with a model set
   for each agent in App Config (e.g. `BACKEND:OBED_MODEL`,
   `BACKEND:JUSTICE_MODEL`). Hugging Face is one possible provider.
+- **Data residency is configurable per client** (later). Some clients have no
+  requirement (Rolepay); others do (e.g. a client that needs its data processed
+  in Europe). The client's configuration states the requirement, e.g. `none`,
+  `uk`, `eu` or `us`, and 3lay routes each model call to a deployment in that
+  region. See "Data residency" under step 1.
+- **Provider for learning:** roadmap step 1 starts with Hugging Face (free tier,
+  synthetic documents only).
 - **Pricing is per event:** clients are billed on the number of events created.
   Which events count (e.g. failures caused by 3lay, reprocessing) is to be
   decided with the client configuration.
 - **Retry limits can be set by each client,** within limits set by 3lay.
-- **Framework:** LangChain / LangGraph.
+- **Framework:** LangChain for talking to models (one interface for every
+  provider, structured output); LangGraph for orchestration (Orchy's graph) and
+  Boardy's conversation.
+- **Deployment:** the pipeline runs as a Container Apps job triggered by the
+  ingest queue; Boardy runs in the backend API. See "Deployment" under
+  Architecture.
 - **Way of working:** I (Seth) write the code; Claude reviews it and explains the concepts.
 
 ## Architecture
@@ -172,8 +184,50 @@ Email ─▶ Worker (reject if not active or over the cap) ─▶ Function (even
                           Frontend: run dashboard + Boardy chat
 ```
 
-Open: what consumes the queue and runs the graph? A queue-triggered Function, a
-Container Apps job, or a worker in the backend.
+### Deployment
+
+Agents aren't services. Each agent is a role in a graph (a node or small
+subgraph, with its own prompt and model), so what gets deployed is the program
+that runs the graph. The models themselves stay hosted by the provider and are
+called over HTTPS.
+
+There are two programs, because the work comes in two shapes:
+
+| | Pipeline: Orchy → Obed → Justice → Noti | Boardy |
+|---|---|---|
+| Triggered by | A queue message | A client chatting in the frontend |
+| Shape | Background job, no one waiting | Request and reply, streamed back |
+| Runs in | **A Container Apps job** (event-driven, scaled by the ingest queue) | **The backend** (`ca-3lay-api`), as new API endpoints |
+| State | Postgres (events, configurations), Blob (documents) | Postgres (LangGraph's Postgres checkpointer, `app` schema) |
+
+```
+Function ─▶ queue ─▶ Container Apps job (pipeline graph) ─▶ destinations
+                         │
+                         ▼
+                 Postgres (events, configs) · Blob (documents)
+                         ▲
+Frontend ─▶ ca-3lay-api (Boardy endpoints, conversation saved in Postgres)
+```
+
+Why a Container Apps job for the pipeline:
+- Reuses the existing Container Apps environment, registry (`containerreg3lay`)
+  and image build process.
+- Starts per queue message and scales to zero, so it only costs money while
+  processing.
+- No problem with long runs (several LLM calls per document).
+
+Rejected alternatives:
+- **Queue-triggered Function:** time limits and Python packaging are awkward for
+  a heavy agent pipeline.
+- **A worker inside the backend API:** slow extractions would compete with API
+  requests, and the API couldn't scale to zero.
+- **LangGraph Platform** (LangChain's paid hosting): not needed; hosting
+  ourselves is cheaper and teaches more.
+
+Code: one `agents/` Python package with all agents and graphs. The pipeline job
+runs it from its own entry point; the backend imports Boardy from it. Agents stay
+separate modules, so one can be split into its own service later if it needs to
+(e.g. heavy OCR libraries, or different scaling).
 
 ## Cross-cutting concerns
 
@@ -203,7 +257,7 @@ Build from the inside out; each step teaches one concept.
 | # | Step | What it teaches |
 |---|---|---|
 | 0 | **Design on paper** (done, see below) | Data modelling, contracts |
-| 1 | Obed alone: one statement or payslip → validated JSON, no framework | Prompting, structured output, OCR vs vision |
+| 1 | Obed alone: one statement or payslip → validated JSON, LangChain only (no graph yet) | Prompting, structured output, OCR vs vision, swapping models |
 | 2 | Wrap in LangGraph, add checks and a retry/fail edge | State, nodes, conditional edges |
 | 3 | Add Justice | LLM as judge, evaluating the judge |
 | 4 | Noti as a plain node: sign and POST the webhook | Mixing code and LLM steps |
@@ -287,7 +341,9 @@ approved by the client, never changed once approved):
 
 Deliberately **not** in the configuration:
 - **Model choice:** 3lay's decision, set in App Config. Clients choose *what*
-  they get, not *how* 3lay produces it.
+  they get, not *how* 3lay produces it. The one exception is a **data residency
+  requirement**: the client states the region, and 3lay picks the models (see
+  below).
 - **Secrets** (e.g. the webhook signing secret): stored separately and only
   referenced, so they're never copied into a version, shown in the dashboard or
   sent to Boardy.
@@ -399,6 +455,37 @@ Billing is per event, whichever case it joins.
 A chat bot talks directly to end users, but always **as the client's own bot**:
 3lay stays invisible. For example, 3lay could be its own client, running a
 WhatsApp bot that consults with its own prospective clients.
+
+#### Data residency (later)
+Some clients need their data processed in a particular region; others don't
+mind. So residency is part of the client's configuration, as a **requirement**,
+not a model choice:
+
+- The configuration states `data_residency`: `none` (default), `uk`, `eu`
+  or `us`. Boardy asks about it.
+- 3lay keeps a **model catalogue per region** in App Config: for each agent and
+  region, which deployment to use (e.g. Obed in `eu` → a model hosted in an EU
+  region; `none` → whatever is best and cheapest).
+- Orchy looks up the client's requirement and picks the matching deployment for
+  every model call. Because every call goes through LangChain's common
+  interface, the agents don't change: only the `provider:model` string and
+  endpoint do.
+- A region with no suitable model is a configuration error caught at approval,
+  not a failure when an email arrives.
+
+Example: Rolepay has no requirement, so it uses the default models. A client
+that requires Europe has every call routed to EU-hosted deployments.
+
+Things to resolve before offering it:
+- **Models aren't the only place data lives.** Blobs (raw emails), the
+  database (results) and logs and traces (e.g. LangSmith) also hold client data.
+  A real residency promise means those are in the region too, e.g. a storage
+  account and database per region.
+- **Each provider's guarantees differ:** Azure regional deployments process
+  data in the chosen region; Hugging Face Inference Providers depend on which
+  partner serves the request, so a residency client must be pinned to a partner
+  in that region (or use a dedicated endpoint).
+- Residency deployments may cost more, which could be reflected in the plan's price.
 
 #### Plans and costs
 - Plans are priced on **events per month and documents per event**, and
@@ -943,6 +1030,6 @@ A payslip:
 
 ## Open questions
 
-- What consumes the queue and runs the graph?
-- Which LLM provider(s)? This depends on data residency and cost.
+- Which LLM provider(s) for production? Learning starts on Hugging Face; the
+  production choice depends on data residency and cost.
 - End-user profiles: what goes in them, and when?

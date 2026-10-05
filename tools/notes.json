@@ -1,5 +1,5 @@
 {
-  "savedAt": "2026-10-05T16:18:45.492Z",
+  "savedAt": "2026-10-05T16:38:55.016Z",
   "notes": [
     {
       "id": "0510113e-9eaf-42de-990e-c3ddf80b9fef",
@@ -114,7 +114,7 @@
     {
       "id": "51d317d3-9643-4635-bc36-072c9451f326",
       "title": "Run the graph from the ingest queue",
-      "description": "Roadmap step 5. Decide what consumes the queue (queue-triggered Function, Container Apps job, or backend worker). Retries, poison queue, steps safe to re-run; write event records.",
+      "description": "Roadmap step 5. Run the pipeline graph as an event-driven Container Apps job scaled by the ingest queue (same environment and registry as the backend). Retries, poison queue, steps safe to re-run; write event records. See Planner.md, Architecture > Deployment.",
       "type": "feature",
       "priority": "high",
       "date": "2026-10-05",
@@ -340,6 +340,16 @@
       "date": "2026-10-05",
       "done": false,
       "createdAt": "2026-10-05T16:12:33.235Z"
+    },
+    {
+      "id": "75bc7d2d-3fff-4699-b1d6-14be5af889a8",
+      "title": "Data residency per client",
+      "description": "Client configuration states data_residency (none, uk, eu, us); Boardy asks about it. 3lay keeps a model catalogue per region in App Config and routes every model call to a deployment in that region (e.g. Rolepay: none; a client requiring Europe: EU-hosted models). Also needs blobs, database and traces in the region for a real guarantee. Hugging Face partners must be pinned to the region. See Planner.md step 1, Data residency.",
+      "type": "feature",
+      "priority": "medium",
+      "date": "2026-10-05",
+      "done": false,
+      "createdAt": "2026-10-05T16:38:55.016Z"
     }
   ]
 }
