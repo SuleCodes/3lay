@@ -1,0 +1,15 @@
+{
+  "savedAt": "2026-10-05T13:12:23.905Z",
+  "notes": [
+    {
+      "id": "0510113e-9eaf-42de-990e-c3ddf80b9fef",
+      "title": "Replace database calls for cloudflare worker agent",
+      "description": "It will be increasingly expensive to keep database calls as part of the auth check for inbound mail. We can replace with a static list that is updated when a user signs up",
+      "type": "feature",
+      "priority": "medium",
+      "date": "2026-10-05",
+      "done": false,
+      "createdAt": "2026-10-05T13:12:23.900Z"
+    }
+  ]
+}

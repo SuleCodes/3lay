@@ -26,6 +26,14 @@
       "request": "launch",
       "command": "npm run dev",
       "cwd": "${workspaceFolder}/frontend"
+    },
+    {
+      // Feature/bug notes tracker, saved to tools/notes.json. Open http://localhost:4321.
+      "name": "Notes (tools :4321)",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "node tools/notes-server.mjs",
+      "cwd": "${workspaceFolder}"
     }
   ],
   "compounds": [

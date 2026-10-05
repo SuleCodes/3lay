@@ -1,0 +1,546 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>3lay Notes</title>
+<style>
+  :root {
+    --bg: #f6f6f4;
+    --panel: #ffffff;
+    --text: #1d1d1b;
+    --muted: #6b6b66;
+    --border: #e3e3de;
+    --accent: #1d1d1b;
+    --accent-text: #ffffff;
+    --input: #ffffff;
+    --high: #c2410c;  --high-bg: #fff1e8;
+    --medium: #a16207; --medium-bg: #fdf6dc;
+    --low: #47704c;   --low-bg: #ecf5ed;
+    --bug: #b42318;   --bug-bg: #fdecea;
+    --feature: #2f5fa7; --feature-bg: #e9f0fb;
+    --danger: #b42318;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f0f0e;
+      --panel: #181817;
+      --text: #ededea;
+      --muted: #9a9a94;
+      --border: #2c2c2a;
+      --accent: #ededea;
+      --accent-text: #111110;
+      --input: #121211;
+      --high: #fb923c;  --high-bg: #3a1f10;
+      --medium: #facc15; --medium-bg: #332a0b;
+      --low: #86c58e;   --low-bg: #16291a;
+      --bug: #f87171;   --bug-bg: #3a1514;
+      --feature: #7aa7f0; --feature-bg: #142338;
+      --danger: #f87171;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  main { max-width: 860px; margin: 0 auto; padding: 32px 16px 64px; }
+  header { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; justify-content: space-between; }
+  h1 { margin: 0; font-size: 22px; }
+  .sub { margin: 4px 0 0; color: var(--muted); font-size: 14px; }
+  .counts { display: flex; gap: 8px; flex-wrap: wrap; }
+  .count { font-size: 13px; color: var(--muted); border: 1px solid var(--border); border-radius: 999px; padding: 2px 10px; }
+
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-top: 20px; }
+  .panel h2 { margin: 0 0 12px; font-size: 15px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+  .full { grid-column: 1 / -1; }
+  label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 4px; }
+  input, select, textarea {
+    width: 100%;
+    font: inherit;
+    color: var(--text);
+    background: var(--input);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 10px;
+  }
+  textarea { min-height: 90px; resize: vertical; }
+  input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+  button {
+    font: inherit;
+    font-size: 14px;
+    cursor: pointer;
+    border-radius: 8px;
+    padding: 7px 14px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text);
+  }
+  button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+  button.danger { color: var(--danger); }
+  button:hover { filter: brightness(0.95); }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .toolbar { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr 1fr; gap: 8px; margin-top: 20px; }
+
+  ul.notes { list-style: none; margin: 16px 0 0; padding: 0; display: grid; gap: 10px; }
+  li.note { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
+  li.note.done { opacity: 0.55; }
+  li.note.done .title { text-decoration: line-through; }
+  .note-head { display: flex; gap: 10px; align-items: flex-start; }
+  .note-head input[type=checkbox] { width: 18px; height: 18px; margin-top: 3px; flex: none; accent-color: var(--accent); }
+  .title { font-weight: 600; flex: 1; word-break: break-word; }
+  .meta { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin: 6px 0 0 28px; font-size: 12px; color: var(--muted); }
+  .tag { border-radius: 999px; padding: 1px 9px; font-weight: 600; font-size: 12px; }
+  .tag.high { color: var(--high); background: var(--high-bg); }
+  .tag.medium { color: var(--medium); background: var(--medium-bg); }
+  .tag.low { color: var(--low); background: var(--low-bg); }
+  .tag.bug { color: var(--bug); background: var(--bug-bg); }
+  .tag.feature { color: var(--feature); background: var(--feature-bg); }
+  .desc { margin: 8px 0 0 28px; white-space: pre-wrap; word-break: break-word; color: var(--text); }
+  .note-actions { display: flex; gap: 6px; margin: 10px 0 0 28px; }
+  .note-actions button { padding: 3px 10px; font-size: 13px; }
+  .empty { text-align: center; color: var(--muted); padding: 32px 0; }
+  .footer { margin-top: 28px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .footer .hint { color: var(--muted); font-size: 13px; flex: 1; min-width: 200px; }
+  .warn { margin-top: 16px; padding: 10px 14px; border-radius: 8px; background: var(--high-bg); color: var(--high); font-size: 14px; display: none; }
+
+  @media (max-width: 640px) {
+    .grid { grid-template-columns: 1fr; }
+    .toolbar { grid-template-columns: 1fr 1fr; }
+    .toolbar .search { grid-column: 1 / -1; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <h1>3lay Notes</h1>
+      <p class="sub">Features and bugs to work on. <span id="save-status"></span></p>
+    </div>
+    <div class="counts" id="counts"></div>
+  </header>
+
+  <div class="warn" id="storage-warning"></div>
+
+  <form class="panel" id="note-form" autocomplete="off">
+    <h2 id="form-heading">New note</h2>
+    <div class="grid">
+      <div class="full">
+        <label for="title">Title</label>
+        <input id="title" required maxlength="200" placeholder="e.g. Rotate the storage account key">
+      </div>
+      <div>
+        <label for="type">Type</label>
+        <select id="type">
+          <option value="feature">Feature</option>
+          <option value="bug">Bug</option>
+        </select>
+      </div>
+      <div>
+        <label for="priority">Priority</label>
+        <select id="priority">
+          <option value="high">High</option>
+          <option value="medium" selected>Medium</option>
+          <option value="low">Low</option>
+        </select>
+      </div>
+      <div>
+        <label for="date">Date</label>
+        <input id="date" type="date" required>
+      </div>
+      <div class="full">
+        <label for="description">Description</label>
+        <textarea id="description" placeholder="Details, steps to reproduce, links..."></textarea>
+      </div>
+    </div>
+    <div class="actions">
+      <button type="submit" class="primary" id="save-btn">Add note</button>
+      <button type="button" id="cancel-btn" hidden>Cancel</button>
+    </div>
+  </form>
+
+  <div class="toolbar">
+    <input class="search" id="search" type="search" placeholder="Search title or description" aria-label="Search">
+    <select id="filter-type" aria-label="Filter by type">
+      <option value="all">All types</option>
+      <option value="feature">Features</option>
+      <option value="bug">Bugs</option>
+    </select>
+    <select id="filter-priority" aria-label="Filter by priority">
+      <option value="all">All priorities</option>
+      <option value="high">High</option>
+      <option value="medium">Medium</option>
+      <option value="low">Low</option>
+    </select>
+    <select id="filter-status" aria-label="Filter by status">
+      <option value="open">Open</option>
+      <option value="done">Done</option>
+      <option value="all">Open &amp; done</option>
+    </select>
+    <select id="sort" aria-label="Sort">
+      <option value="priority">Sort: priority</option>
+      <option value="date-desc">Sort: newest</option>
+      <option value="date-asc">Sort: oldest</option>
+    </select>
+  </div>
+
+  <ul class="notes" id="notes"></ul>
+
+  <div class="footer">
+    <span class="hint" id="footer-hint"></span>
+    <button type="button" id="export-btn">Export</button>
+    <button type="button" id="import-btn">Import</button>
+    <input type="file" id="import-file" accept="application/json,.json" hidden>
+  </div>
+</main>
+
+<script>
+(() => {
+  const STORAGE_KEY = "3lay-notes-v1";
+  const PRIORITY_RANK = { high: 0, medium: 1, low: 2 };
+  const $ = (id) => document.getElementById(id);
+
+  let notes = [];
+  let editingId = null;
+
+  // ---- storage
+  // Opened via `node tools/notes-server.mjs` (http://localhost:4321): notes are
+  // read from and saved to tools/notes.json. Opened as a plain file: they're
+  // kept in this browser's storage only. Browser storage is also kept as a
+  // cache in file mode.
+  let fileMode = false;
+  let saveQueue = Promise.resolve();
+
+  function readLocal() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      return raw ? JSON.parse(raw).filter(isValidNote).map(normalize) : [];
+    } catch {
+      return [];
+    }
+  }
+  function writeLocal() {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(notes));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  function warn(html) {
+    const el = $("storage-warning");
+    el.innerHTML = html || "";
+    el.style.display = html ? "block" : "none";
+  }
+  function setStatus(text) {
+    $("save-status").textContent = text;
+  }
+
+  async function load() {
+    if (location.protocol.startsWith("http")) {
+      try {
+        const res = await fetch("/api/notes", { cache: "no-store" });
+        if (res.ok) {
+          fileMode = true;
+          notes = (await res.json()).notes.filter(isValidNote).map(normalize);
+          // First run with the server: bring over notes made in this browser
+          // before notes.json existed.
+          const local = readLocal();
+          if (notes.length === 0 && local.length > 0) {
+            notes = local;
+            save();
+          }
+          return;
+        }
+      } catch {
+        /* no server -- fall back to browser storage */
+      }
+    }
+    notes = readLocal();
+  }
+
+  function save() {
+    const cached = writeLocal();
+    if (!fileMode) {
+      warn(
+        cached
+          ? "Notes are only saved in this browser, not to <code>tools/notes.json</code>. " +
+              "To save to the file, run <code>node tools/notes-server.mjs</code> and open " +
+              "<a href=\"http://localhost:4321\">http://localhost:4321</a>."
+          : "This browser isn't letting the page save, so notes will be lost when you close it. " +
+              "Use <strong>Export</strong>, or run <code>node tools/notes-server.mjs</code>.",
+      );
+      setStatus(cached ? "Saved in this browser." : "Not saved.");
+      return;
+    }
+    // Saves run one after another, so an older save can never land after a
+    // newer one and overwrite it.
+    const snapshot = JSON.stringify({ notes });
+    setStatus("Saving...");
+    saveQueue = saveQueue.then(async () => {
+      try {
+        const res = await fetch("/api/notes", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: snapshot,
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        warn("");
+        setStatus(`Saved to tools/notes.json at ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}.`);
+      } catch (err) {
+        warn(
+          `Couldn't save to <code>tools/notes.json</code> (${err.message}). Is the notes server still running? ` +
+            "Your changes are kept in this browser; they'll be written to the file on the next save once it's back.",
+        );
+        setStatus("Not saved to file.");
+      }
+    });
+  }
+  function isValidNote(n) {
+    return n && typeof n.id === "string" && typeof n.title === "string" && n.title.trim() !== "";
+  }
+  function normalize(n) {
+    return {
+      id: n.id,
+      title: String(n.title).slice(0, 200),
+      description: String(n.description ?? ""),
+      type: n.type === "bug" ? "bug" : "feature",
+      priority: PRIORITY_RANK[n.priority] !== undefined ? n.priority : "medium",
+      date: /^\d{4}-\d{2}-\d{2}$/.test(n.date) ? n.date : today(),
+      done: Boolean(n.done),
+      createdAt: n.createdAt || new Date().toISOString(),
+    };
+  }
+
+  function today() {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  }
+  function formatDate(iso) {
+    const [y, m, d] = iso.split("-").map(Number);
+    return new Date(y, m - 1, d).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+  }
+  function newId() {
+    return (crypto.randomUUID && crypto.randomUUID()) || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  }
+
+  // ---- form
+  function resetForm() {
+    editingId = null;
+    $("note-form").reset();
+    $("priority").value = "medium";
+    $("date").value = today();
+    $("form-heading").textContent = "New note";
+    $("save-btn").textContent = "Add note";
+    $("cancel-btn").hidden = true;
+  }
+  function startEdit(note) {
+    editingId = note.id;
+    $("title").value = note.title;
+    $("description").value = note.description;
+    $("type").value = note.type;
+    $("priority").value = note.priority;
+    $("date").value = note.date;
+    $("form-heading").textContent = "Edit note";
+    $("save-btn").textContent = "Save changes";
+    $("cancel-btn").hidden = false;
+    $("note-form").scrollIntoView({ behavior: "smooth", block: "start" });
+    $("title").focus();
+  }
+
+  $("note-form").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const fields = {
+      title: $("title").value.trim(),
+      description: $("description").value.trim(),
+      type: $("type").value,
+      priority: $("priority").value,
+      date: $("date").value || today(),
+    };
+    if (!fields.title) return;
+
+    if (editingId) {
+      notes = notes.map((n) => (n.id === editingId ? normalize({ ...n, ...fields }) : n));
+    } else {
+      notes.push(normalize({ id: newId(), ...fields, done: false }));
+    }
+    save();
+    resetForm();
+    render();
+  });
+  $("cancel-btn").addEventListener("click", resetForm);
+
+  // ---- list
+  function visibleNotes() {
+    const q = $("search").value.trim().toLowerCase();
+    const type = $("filter-type").value;
+    const priority = $("filter-priority").value;
+    const status = $("filter-status").value;
+    const sort = $("sort").value;
+
+    const list = notes.filter(
+      (n) =>
+        (type === "all" || n.type === type) &&
+        (priority === "all" || n.priority === priority) &&
+        (status === "all" || (status === "done") === n.done) &&
+        (!q || n.title.toLowerCase().includes(q) || n.description.toLowerCase().includes(q)),
+    );
+
+    const byDate = (a, b) => a.date.localeCompare(b.date) || a.createdAt.localeCompare(b.createdAt);
+    list.sort((a, b) => {
+      // Finished notes always sink below open ones.
+      if (a.done !== b.done) return a.done ? 1 : -1;
+      if (sort === "date-desc") return byDate(b, a);
+      if (sort === "date-asc") return byDate(a, b);
+      return PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority] || byDate(b, a);
+    });
+    return list;
+  }
+
+  function tag(text, cls) {
+    const span = document.createElement("span");
+    span.className = `tag ${cls}`;
+    span.textContent = text;
+    return span;
+  }
+
+  function render() {
+    const open = notes.filter((n) => !n.done);
+    const counts = $("counts");
+    counts.replaceChildren(
+      ...[
+        `${open.length} open`,
+        `${open.filter((n) => n.type === "bug").length} bugs`,
+        `${open.filter((n) => n.type === "feature").length} features`,
+        `${open.filter((n) => n.priority === "high").length} high`,
+      ].map((t) => Object.assign(document.createElement("span"), { className: "count", textContent: t })),
+    );
+
+    const ul = $("notes");
+    const list = visibleNotes();
+    if (list.length === 0) {
+      const li = document.createElement("li");
+      li.className = "empty";
+      li.textContent = notes.length === 0 ? "No notes yet. Add your first one above." : "No notes match these filters.";
+      ul.replaceChildren(li);
+      return;
+    }
+
+    ul.replaceChildren(
+      ...list.map((note) => {
+        const li = document.createElement("li");
+        li.className = `note${note.done ? " done" : ""}`;
+
+        const head = document.createElement("div");
+        head.className = "note-head";
+        const check = document.createElement("input");
+        check.type = "checkbox";
+        check.checked = note.done;
+        check.setAttribute("aria-label", note.done ? "Mark as open" : "Mark as done");
+        check.addEventListener("change", () => {
+          note.done = check.checked;
+          save();
+          render();
+        });
+        const title = document.createElement("div");
+        title.className = "title";
+        title.textContent = note.title;
+        head.append(check, title);
+
+        const meta = document.createElement("div");
+        meta.className = "meta";
+        meta.append(
+          tag(note.type === "bug" ? "Bug" : "Feature", note.type),
+          tag(note.priority[0].toUpperCase() + note.priority.slice(1), note.priority),
+          Object.assign(document.createElement("span"), { textContent: formatDate(note.date) }),
+        );
+
+        li.append(head, meta);
+
+        if (note.description) {
+          const desc = document.createElement("div");
+          desc.className = "desc";
+          desc.textContent = note.description;
+          li.append(desc);
+        }
+
+        const actions = document.createElement("div");
+        actions.className = "note-actions";
+        const edit = Object.assign(document.createElement("button"), { type: "button", textContent: "Edit" });
+        edit.addEventListener("click", () => startEdit(note));
+        const del = Object.assign(document.createElement("button"), { type: "button", textContent: "Delete", className: "danger" });
+        del.addEventListener("click", () => {
+          if (!confirm(`Delete "${note.title}"? This can't be undone.`)) return;
+          notes = notes.filter((n) => n.id !== note.id);
+          if (editingId === note.id) resetForm();
+          save();
+          render();
+        });
+        actions.append(edit, del);
+        li.append(actions);
+        return li;
+      }),
+    );
+  }
+
+  ["search", "filter-type", "filter-priority", "filter-status", "sort"].forEach((id) =>
+    $(id).addEventListener("input", render),
+  );
+
+  // ---- export / import
+  $("export-btn").addEventListener("click", () => {
+    const blob = new Blob([JSON.stringify({ exportedAt: new Date().toISOString(), notes }, null, 2)], {
+      type: "application/json",
+    });
+    const a = Object.assign(document.createElement("a"), {
+      href: URL.createObjectURL(blob),
+      download: `3lay-notes-${today()}.json`,
+    });
+    a.click();
+    URL.revokeObjectURL(a.href);
+  });
+
+  $("import-btn").addEventListener("click", () => $("import-file").click());
+  $("import-file").addEventListener("change", async (e) => {
+    const file = e.target.files[0];
+    e.target.value = "";
+    if (!file) return;
+    try {
+      const data = JSON.parse(await file.text());
+      const incoming = (Array.isArray(data) ? data : data.notes || []).filter(isValidNote).map(normalize);
+      // Merge: notes with the same id are replaced by the imported copy.
+      const byId = new Map(notes.map((n) => [n.id, n]));
+      incoming.forEach((n) => byId.set(n.id, n));
+      notes = [...byId.values()];
+      save();
+      render();
+      alert(`Imported ${incoming.length} note(s).`);
+    } catch {
+      alert("That file isn't a valid notes export.");
+    }
+  });
+
+  // ---- start
+  resetForm();
+  load().then(() => {
+    $("footer-hint").textContent = fileMode
+      ? "Notes are saved to tools/notes.json. Export downloads a copy; Import merges one back in."
+      : "Notes are saved in this browser. Export a JSON copy to back them up; Import merges a copy back in.";
+    if (fileMode) {
+      setStatus("Saving to tools/notes.json.");
+      warn("");
+    } else {
+      save();
+    }
+    render();
+  });
+})();
+</script>
+</body>
+</html>
