@@ -1,5 +1,5 @@
 {
-  "savedAt": "2026-10-05T13:12:23.905Z",
+  "savedAt": "2026-10-05T16:18:45.492Z",
   "notes": [
     {
       "id": "0510113e-9eaf-42de-990e-c3ddf80b9fef",
@@ -10,6 +10,336 @@
       "date": "2026-10-05",
       "done": false,
       "createdAt": "2026-10-05T13:12:23.900Z"
+    },
+    {
+      "id": "0c089968-c558-4c71-91c2-1ffd43b26b6f",
+      "title": "Design: client configuration",
+      "description": "Define the configuration Boardy will produce and every agent reads: what Obed extracts and how, the rules Justice checks, Noti's destinations. Structured fields vs free-text instructions; versioning and approval; which version each event used; one or several workflows per client. See Planner.md, 'Design on paper'.",
+      "type": "feature",
+      "priority": "high",
+      "date": "2026-10-05",
+      "done": true,
+      "createdAt": "2026-10-05T14:38:45.516Z"
+    },
+    {
+      "id": "8cecb62d-8b51-4d10-b00c-eaf835ef5c4d",
+      "title": "Design: event lifecycle",
+      "description": "Event states and allowed moves (e.g. received → processing → extracted → judged → delivered), failure points, failed vs needs_review, delivery retries, what each step records for the timeline. See Planner.md, 'Design on paper'.",
+      "type": "feature",
+      "priority": "high",
+      "date": "2026-10-05",
+      "done": true,
+      "createdAt": "2026-10-05T14:38:45.517Z"
+    },
+    {
+      "id": "03197cad-de1f-454a-b429-c92410ff6868",
+      "title": "Design: Rolepay payload",
+      "description": "The JSON Rolepay's webhook receives, drafted from a redacted payslip: which fields, several payslips per email, where event_id / verdict / per-field confidence go, the failure payload, schema versioning. See Planner.md, 'Design on paper'.",
+      "type": "feature",
+      "priority": "high",
+      "date": "2026-10-05",
+      "done": true,
+      "createdAt": "2026-10-05T14:38:45.518Z"
+    },
+    {
+      "id": "c2dc568b-80e0-41da-81c3-8126f98cf4a6",
+      "title": "Reject emails until client onboarding is complete",
+      "description": "Add a client status (onboarding → active → suspended). The Worker's recipient check rejects clients that aren't active, with a bounce message giving the reason, before any Function call, storage or LLM cost.",
+      "type": "feature",
+      "priority": "high",
+      "date": "2026-10-05",
+      "done": false,
+      "createdAt": "2026-10-05T14:38:45.519Z"
+    },
+    {
+      "id": "881e1ca0-62ca-4be3-b5aa-521344f21d63",
+      "title": "Event tracking: events, event_steps, results",
+      "description": "Use the ingest Function's ID as event_id and carry it through the queue message, graph, database, webhook payload and frontend. Tables: events (status, verdict), event_steps (one row per step: timing, output, error), results (extracted JSON + Justice scores). Decide retention.",
+      "type": "feature",
+      "priority": "high",
+      "date": "2026-10-05",
+      "done": false,
+      "createdAt": "2026-10-05T14:38:45.520Z"
+    },
+    {
+      "id": "35e44072-3d01-4f83-9278-44ad1ff2cb6d",
+      "title": "Obed: payslip extraction with structured output",
+      "description": "Roadmap step 1. A plain script, no framework: one payslip → JSON validated against a Pydantic model. Compare OCR vs a model that can read images. Email content is untrusted; Obed gets no outbound tools.",
+      "type": "feature",
+      "priority": "high",
+      "date": "2026-10-05",
+      "done": false,
+      "createdAt": "2026-10-05T14:38:45.521Z"
+    },
+    {
+      "id": "61e2c282-9a49-4b1b-8243-f2486b65ddab",
+      "title": "Orchy: LangGraph orchestration graph",
+      "description": "Roadmap step 2. Wrap Obed in a LangGraph graph: state, nodes, deterministic checks, conditional edges for retry/fail. Orchy is the graph itself, not an LLM.",
+      "type": "feature",
+      "priority": "high",
+      "date": "2026-10-05",
+      "done": false,
+      "createdAt": "2026-10-05T14:38:45.522Z"
+    },
+    {
+      "id": "1b8dde1f-9500-4a43-b1f5-a73388886d82",
+      "title": "Deterministic checks before Justice",
+      "description": "Plain-code validation: matches the schema; business rules (gross − deductions = net, plausible tax, valid dates). Free, instant, no hallucination.",
+      "type": "feature",
+      "priority": "high",
+      "date": "2026-10-05",
+      "done": false,
+      "createdAt": "2026-10-05T14:38:45.523Z"
+    },
+    {
+      "id": "ed0ac35d-ae6f-4b8a-a186-c1de22bc72d3",
+      "title": "Justice: LLM-as-judge confidence and verdict",
+      "description": "Roadmap step 3. Runs on every result after the checks. Outputs per-field confidence, a verdict (accepted / needs_review / failed) and readable reasons. Use a different model from Obed; evaluate Justice against the labelled test set. Roughly doubles LLM cost per request.",
+      "type": "feature",
+      "priority": "medium",
+      "date": "2026-10-05",
+      "done": false,
+      "createdAt": "2026-10-05T14:38:45.524Z"
+    },
+    {
+      "id": "a0787d81-c964-42cc-b48a-2341deb63c8b",
+      "title": "Noti: channel adapters, webhook first",
+      "description": "Roadmap step 4. One interface, an adapter per channel. Webhook: HMAC-signed with a secret per client, safe retries without duplicates (event_id), URL validated at onboarding against SSRF. Destination only ever from approved config.",
+      "type": "feature",
+      "priority": "high",
+      "date": "2026-10-05",
+      "done": false,
+      "createdAt": "2026-10-05T14:38:45.525Z"
+    },
+    {
+      "id": "51d317d3-9643-4635-bc36-072c9451f326",
+      "title": "Run the graph from the ingest queue",
+      "description": "Roadmap step 5. Decide what consumes the queue (queue-triggered Function, Container Apps job, or backend worker). Retries, poison queue, steps safe to re-run; write event records.",
+      "type": "feature",
+      "priority": "high",
+      "date": "2026-10-05",
+      "done": false,
+      "createdAt": "2026-10-05T14:38:45.526Z"
+    },
+    {
+      "id": "77c69865-f3d5-4554-bea7-7096e1d25a99",
+      "title": "Evaluation test set and tracing",
+      "description": "10–20 payslips (redacted or synthetic) with the correct JSON, to score prompt and model changes. Tracing with LangSmith or Langfuse.",
+      "type": "feature",
+      "priority": "high",
+      "date": "2026-10-05",
+      "done": false,
+      "createdAt": "2026-10-05T14:38:45.527Z"
+    },
+    {
+      "id": "96eb57cb-6079-4112-955a-65dba9932ae5",
+      "title": "Prompt injection defences",
+      "description": "Emails are untrusted input. Treat content as data, no outbound tools for Obed, destinations only from configuration. Add injection attempts to the test set.",
+      "type": "feature",
+      "priority": "high",
+      "date": "2026-10-05",
+      "done": false,
+      "createdAt": "2026-10-05T14:38:45.528Z"
+    },
+    {
+      "id": "200b60a7-4a46-4ed6-9c42-9fe86ef9dc79",
+      "title": "Personal data and UK GDPR",
+      "description": "Payslips contain names, NI numbers, pay and tax; 3lay is a data processor. Decide LLM provider data terms and processing region (e.g. Azure AI Foundry UK South), retention of raw emails and results, and a data processing agreement with Rolepay.",
+      "type": "feature",
+      "priority": "high",
+      "date": "2026-10-05",
+      "done": false,
+      "createdAt": "2026-10-05T14:38:45.529Z"
+    },
+    {
+      "id": "e2328afc-2acb-48ba-b5a8-b1a3fc19746a",
+      "title": "Swappable models per agent",
+      "description": "LangChain's chat-model interface with provider:model strings, set per agent in App Config (BACKEND:OBED_MODEL, BACKEND:JUSTICE_MODEL). Hugging Face is one possible provider; check structured-output support, document reading and cost. Use the test set to compare models.",
+      "type": "feature",
+      "priority": "medium",
+      "date": "2026-10-05",
+      "done": false,
+      "createdAt": "2026-10-05T14:38:45.530Z"
+    },
+    {
+      "id": "451e5c90-d191-45f3-b95c-23620bb89f5e",
+      "title": "Run dashboard in the frontend",
+      "description": "Roadmap step 6. Client view of events by event_id, a step timeline for failures, the verdict and per-field confidence, and metrics: volume, failure rate, average confidence, delivery success.",
+      "type": "feature",
+      "priority": "medium",
+      "date": "2026-10-05",
+      "done": false,
+      "createdAt": "2026-10-05T14:38:45.531Z"
+    },
+    {
+      "id": "05bd17f6-8d94-4dc5-aa4f-072da44ac609",
+      "title": "Boardy: onboarding chat agent",
+      "description": "Roadmap step 7. Conversation in the frontend that produces the client configuration (structured, versioned, approved by the client, not a free-text prompt). LangGraph interrupt, checkpointer, streaming. Must ask about every configurable option rather than assume Rolepay's: document types, rules, analyses, case matching, client references, case closing period, destinations, retry limits, intake. See 'What Boardy asks about' in Planner.md.",
+      "type": "feature",
+      "priority": "medium",
+      "date": "2026-10-05",
+      "done": false,
+      "createdAt": "2026-10-05T14:38:45.532Z"
+    },
+    {
+      "id": "096a124b-848a-4108-8206-02c0de5b9ef2",
+      "title": "Notification channels beyond webhooks",
+      "description": "SMS and other triggers as Noti adapters, with a message template per destination (start with deterministic templates).",
+      "type": "feature",
+      "priority": "low",
+      "date": "2026-10-05",
+      "done": false,
+      "createdAt": "2026-10-05T14:38:45.533Z"
+    },
+    {
+      "id": "08096c89-db97-4fff-9281-de97d14cdf5a",
+      "title": "End-user profiles",
+      "description": "Profiles for clients' end users (e.g. Rolepay's actors), keyed by sender address (origin).",
+      "type": "feature",
+      "priority": "low",
+      "date": "2026-10-05",
+      "done": false,
+      "createdAt": "2026-10-05T14:38:45.534Z"
+    },
+    {
+      "id": "e19c7347-639a-4bab-95a4-2da46aa39c85",
+      "title": "More inbound channels",
+      "description": "WhatsApp, SMS and other channels besides email. A WhatsApp bot holds an ongoing conversation with end users as the client's own bot (3lay invisible; 3lay may be its own client), chained together by case_ref. Chat messages aren't events: an event is created only when the conversation hands work to the pipeline.",
+      "type": "feature",
+      "priority": "low",
+      "date": "2026-10-05",
+      "done": false,
+      "createdAt": "2026-10-05T14:38:45.535Z"
+    },
+    {
+      "id": "04f18871-9ecc-44d2-920e-d1a551591d46",
+      "title": "Reprocessing events (runs)",
+      "description": "An event can be reprocessed (new schema version, better model). Each run has its own steps and result; the latest is current, earlier runs kept as history. Every run is delivered with its run number. Retries of transient errors are attempts within a run. See Planner.md step 2.",
+      "type": "feature",
+      "priority": "medium",
+      "date": "2026-10-05",
+      "done": false,
+      "createdAt": "2026-10-05T15:47:53.269Z"
+    },
+    {
+      "id": "8a9c9b28-e37d-45c3-8ada-94167b2e4a35",
+      "title": "Watchdog for stuck events",
+      "description": "Mark events failed (processing_timeout) when stuck in processing too long, e.g. after a worker crash, so the client always hears about every event.",
+      "type": "feature",
+      "priority": "medium",
+      "date": "2026-10-05",
+      "done": false,
+      "createdAt": "2026-10-05T15:47:53.270Z"
+    },
+    {
+      "id": "fbfd15da-15e0-46d3-bcd4-348bf461ec48",
+      "title": "Error code catalogue",
+      "description": "Stable, documented error codes for failed events and rejected items (no_documents_found, unsupported_file_type, document_unreadable, not_a_relevant_document, processing_error, processing_timeout). Part of the client contract; never renamed.",
+      "type": "feature",
+      "priority": "high",
+      "date": "2026-10-05",
+      "done": false,
+      "createdAt": "2026-10-05T15:47:53.271Z"
+    },
+    {
+      "id": "476d1c68-0c4d-40a3-ad26-5fbf55918ff8",
+      "title": "Delivery tracking, retries and resend",
+      "description": "Delivery status per destination (pending, delivered, retrying, gave_up). Retries with increasing waits over ~24h, then gave_up. Failed events delivered too. Resend button in the dashboard. Retry limits: 3lay defaults, configurable per client.",
+      "type": "feature",
+      "priority": "medium",
+      "date": "2026-10-05",
+      "done": false,
+      "createdAt": "2026-10-05T15:47:53.272Z"
+    },
+    {
+      "id": "9c818157-7f65-4224-b2b6-c1f66345799a",
+      "title": "Human review of needs_review results",
+      "description": "Later: let clients approve or correct needs_review results in the dashboard, then deliver the corrected result. For now needs_review is inform only.",
+      "type": "feature",
+      "priority": "low",
+      "date": "2026-10-05",
+      "done": false,
+      "createdAt": "2026-10-05T15:47:53.273Z"
+    },
+    {
+      "id": "d0cc1837-b890-4f86-879a-85d8329c5b87",
+      "title": "Configuration versions and approval",
+      "description": "Client account (status, billing plan, monthly cap, active version) separate from immutable configuration versions: intake, document_types, analyses, judging, destinations, processing. draft → approved → active; one active version; every event records its version. Model choice and secrets stay out of it. See Planner.md step 1.",
+      "type": "feature",
+      "priority": "high",
+      "date": "2026-10-05",
+      "done": false,
+      "createdAt": "2026-10-05T16:03:16.184Z"
+    },
+    {
+      "id": "2b2cacce-befa-4277-a4db-2dc40632b3f4",
+      "title": "Rule types as data",
+      "description": "A fixed set of rule types the checks understand (sum_equals, percentage_of, compare, date_within, required, allowed_values), each with on_fail: needs_review or reject. Works within a document and across documents. Boardy chooses from them; it can't write code.",
+      "type": "feature",
+      "priority": "high",
+      "date": "2026-10-05",
+      "done": false,
+      "createdAt": "2026-10-05T16:03:16.185Z"
+    },
+    {
+      "id": "0e749cbc-1772-49da-8003-5d4173adb6f5",
+      "title": "Orchy: classify attachments into document types",
+      "description": "Orchy's one LLM step: each attachment → one of the client's document types (by its description), or unknown → rejected item (not_a_relevant_document). Then fan out one branch per document (LangGraph fan-out / fan-in).",
+      "type": "feature",
+      "priority": "high",
+      "date": "2026-10-05",
+      "done": false,
+      "createdAt": "2026-10-05T16:03:16.186Z"
+    },
+    {
+      "id": "bc61dce4-e8e6-4e0c-8de5-637d886ca11f",
+      "title": "Cross-document analyses",
+      "description": "Optional steps across all documents in a case (e.g. match an invoice to its purchase order), with their own rules and/or instructions and output schema. Rerun across the whole case when a new event joins it. Results go in the envelope's analyses list.",
+      "type": "feature",
+      "priority": "medium",
+      "date": "2026-10-05",
+      "done": false,
+      "createdAt": "2026-10-05T16:03:16.187Z"
+    },
+    {
+      "id": "e03591d4-568a-4418-b8da-bd23dcf52863",
+      "title": "Billing per event and monthly cap",
+      "description": "Bill completed events and sender-caused failures; not 3lay-caused failures; reprocessing only when the client asks. Plans priced on events per month and documents per event, plus a maximum attachments setting. Monthly event cap: warn the client at 80% (email and dashboard); when reached, bounce new emails with a reason (not billed).",
+      "type": "feature",
+      "priority": "high",
+      "date": "2026-10-05",
+      "done": false,
+      "createdAt": "2026-10-05T16:03:16.188Z"
+    },
+    {
+      "id": "8c1408a4-44b8-448f-a69a-74c5dc4e9fab",
+      "title": "Edit configuration in the dashboard",
+      "description": "Clients can edit their configuration directly as well as through Boardy. Every edit creates a new version that goes through the same validation and needs approval.",
+      "type": "feature",
+      "priority": "medium",
+      "date": "2026-10-05",
+      "done": false,
+      "createdAt": "2026-10-05T16:03:16.189Z"
+    },
+    {
+      "id": "0d3ccd8b-144e-4c7d-b18b-f150347639c3",
+      "title": "Intake rules: sender allowlists",
+      "description": "For now anyone can send to a client's address. Later: allowlists of senders or domains, or known end users only, bounced at the Worker so they're never billed.",
+      "type": "feature",
+      "priority": "low",
+      "date": "2026-10-05",
+      "done": false,
+      "createdAt": "2026-10-05T16:03:16.190Z"
+    },
+    {
+      "id": "ef5ce9ea-2e7f-43fe-b55e-95ccc65737ad",
+      "title": "Cases and case matching (case_ref)",
+      "description": "Every event belongs to a case (case_ref in the envelope); by default a new one. Events join an existing case by configured strategies: thread (email reply headers / chat conversation), a reference in the email, a matching extracted field, or sender + time window. Analyses run across the whole case. Cases close explicitly or after inactivity (client configurable, default 7 days). Optional client-supplied case references. Rolepay doesn't use cases. Boardy asks about all of this.",
+      "type": "feature",
+      "priority": "high",
+      "date": "2026-10-05",
+      "done": false,
+      "createdAt": "2026-10-05T16:12:33.235Z"
     }
   ]
 }
