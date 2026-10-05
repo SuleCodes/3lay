@@ -11,13 +11,6 @@ settings = get_settings()
 _UNAUTHORIZED = HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
 
 
-def get_current_user(
-    db: Session = Depends(get_db),
-    **_: None,
-) -> User:  # pragma: no cover - replaced below, kept for import clarity
-    raise _UNAUTHORIZED
-
-
 def _build_get_current_user():
     cookie_name = settings.session_cookie_name
 
