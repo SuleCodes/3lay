@@ -29,3 +29,4 @@ infra/cloudflare-worker/.wrangler/
 agents/.venv/
 agents/.env
 agents/tmp/
+agents/**/__pycache__/
