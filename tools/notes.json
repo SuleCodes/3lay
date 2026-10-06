@@ -1,5 +1,5 @@
 {
-  "savedAt": "2026-10-05T16:38:55.016Z",
+  "savedAt": "2026-10-06T19:04:53.696Z",
   "notes": [
     {
       "id": "0510113e-9eaf-42de-990e-c3ddf80b9fef",
@@ -350,6 +350,16 @@
       "date": "2026-10-05",
       "done": false,
       "createdAt": "2026-10-05T16:38:55.016Z"
+    },
+    {
+      "id": "66b0fe2b-2c1b-44c3-b48a-91e3220d67e9",
+      "title": "Obed: dates extracted in the wrong order",
+      "description": "Models copy printed dates digit by digit into the YYYY-MM-DD slots (05.01.2026 -> 0501-01-20), across every model tried. Tried adding <field>_as_printed before each date field (2026-10-06): copying became perfect but the model still converted wrongly 2 of 3 times, so it was reverted. Proposed fix: Obed copies dates as printed; code converts to YYYY-MM-DD (day first by default per client, unambiguous when a part > 12, ambiguous dates flagged needs_review). Dates become a 3lay building block Boardy can use.",
+      "type": "bug",
+      "priority": "high",
+      "date": "2026-10-06",
+      "done": false,
+      "createdAt": "2026-10-06T19:04:53.696Z"
     }
   ]
 }

@@ -79,13 +79,68 @@ LangGraph concepts: `interrupt` (waiting for human input), checkpointers
 (the conversation survives the client leaving and coming back), streaming.
 
 ### Obed: worker agent
-The powerhouse of operations. It follows the client's configuration to process
-each request. For Rolepay: an actor emails their payslips; Obed reads the
-attachments (OCR, or a model that can read images) and produces structured JSON
-of the actor's pay details, matching the schema the client approved.
+Obed is short for **obedience**: it's optimised for taking the instructions
+defined in the client's configuration and following them exactly. Today, for
+Rolepay, the instructions are "extract this document into this schema". In
+future they could be "create this content" or "do this multi-step task", which
+may need tools or lower-level agents.
 
-Email content is untrusted data. Obed has no tools that can send anything
-anywhere.
+For Rolepay: an actor emails their statements; Obed reads the attachments and
+produces structured JSON of the actor's pay, matching the schema the client
+approved.
+
+**Obed is a role, not a model.** It has two parts:
+- **A brain:** reads the instructions, decides what to do, follows the output
+  format. Needs strong instruction following and tool use, plus reasoning for
+  open-ended work.
+- **Senses and hands:** tools or lower-level agents, e.g. "read this document",
+  "draft this content". Each can use its own specialised model.
+
+Three model capabilities matter, and they're independent (many models have all
+three):
+
+| Capability | What it means | Needed for |
+|---|---|---|
+| Seeing (multimodal) | Reads images, scans, PDFs and photos | Anything with documents |
+| Reasoning (thinking) | Plans multi-step work, interprets loose instructions | Open-ended tasks, choosing tools |
+| Instruction following and tool use | Does exactly what it's told, in the right format, calls tools correctly | Everything: this is "obedience" |
+
+**Two ways of working,** chosen by the client's configuration:
+1. **Fixed recipe** (e.g. Rolepay's extraction): known steps, no planning. A
+   model that sees well and follows instructions is enough. Cheap, fast,
+   predictable.
+2. **Agent** (future: content creation, multi-step work): an agent loop in
+   LangGraph. The brain reasons about the instructions and calls the tools the
+   client's configuration allows.
+
+**Obed's input has one shape from day one:** instructions + inputs + output
+schema + allowed tools (none, for now). Extraction is just the first kind of
+instruction, so agent mode can be added without redesigning Obed.
+
+**Models are chosen per task type,** from a catalogue in App Config (e.g. one
+model for extraction, another for the agent brain), combined with the
+per-region catalogue for data residency. Use thinking only where a task needs it.
+
+**Order of authority.** An obedient model with tools is exactly what prompt
+injection needs, so Obed follows instructions from, in order:
+1. 3lay's own system rules
+2. the client's approved configuration
+3. **never** anything inside an email or document: that's data, however much it
+   looks like an instruction
+
+Tools are allow-listed per client in the configuration, and Obed never gets
+outbound tools (delivery stays with Noti). The test set includes documents with
+planted instructions, and how well a model respects this order is one of the
+main things compared between candidate models.
+
+**Choosing the model (step 1):** compare a specialist in reading images against
+general-purpose models on the same synthetic statement. If a generalist extracts
+as well, Obed can have one brain that sees for itself; if not, reading documents
+becomes a tool with its own specialist model. Starting model:
+`google/gemma-4-26B-A4B-it` (general-purpose, reads images, structured output
+and tools, with an EU provider). Candidates to compare against:
+`Qwen/Qwen3-VL-30B-A3B-Instruct` (specialist), `zai-org/GLM-5.3-Flash`,
+`deepseek-ai/DeepSeek-V4.1-Flash`, `Qwen/Qwen3.6-35B-A3B`.
 
 ### Justice: judge (LLM as judge)
 Scores every result, not only failures, since its verdict is what gives each
@@ -150,8 +205,9 @@ The destination always comes from approved configuration, never from Obed's outp
   in Europe). The client's configuration states the requirement, e.g. `none`,
   `uk`, `eu` or `us`, and 3lay routes each model call to a deployment in that
   region. See "Data residency" under step 1.
-- **Provider for learning:** roadmap step 1 starts with Hugging Face (free tier,
-  synthetic documents only).
+- **Provider for learning:** roadmap step 1 starts with Hugging Face Inference
+  Providers (synthetic documents only), with `google/gemma-4-26B-A4B-it` as
+  Obed's first model.
 - **Pricing is per event:** clients are billed on the number of events created.
   Which events count (e.g. failures caused by 3lay, reprocessing) is to be
   decided with the client configuration.

@@ -24,3 +24,8 @@ __queuestorage__/
 # Cloudflare Worker local secrets
 infra/cloudflare-worker/.dev.vars
 infra/cloudflare-worker/.wrangler/
+
+# Agent Code
+agents/.venv/
+agents/.env
+agents/tmp/

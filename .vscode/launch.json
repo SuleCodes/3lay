@@ -28,6 +28,26 @@
       "cwd": "${workspaceFolder}/frontend"
     },
     {
+      // Runs the open file (e.g. a script in agents/scripts) with the agents'
+      // own Python, so agents/.venv never needs activating. Settings come
+      // from agents/.env.
+      "name": "Agents: current file",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${file}",
+      "cwd": "${workspaceFolder}/agents",
+      "python": "${workspaceFolder}/agents/.venv/bin/python",
+      "windows": {
+        "python": "${workspaceFolder}/agents/.venv/Scripts/python.exe"
+      },
+      "envFile": "${workspaceFolder}/agents/.env",
+      "env": {
+        "PYTHONUNBUFFERED": "1"
+      },
+      "console": "integratedTerminal",
+      "justMyCode": true
+    },
+    {
       // Feature/bug notes tracker, saved to tools/notes.json. Open http://localhost:4321.
       "name": "Notes (tools :4321)",
       "type": "node-terminal",
