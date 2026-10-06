@@ -11,16 +11,13 @@ they charge.
 """
 
 import argparse
-import json
 import sys
-import urllib.request
+from pathlib import Path
 
-ROUTER_MODELS_URL = "https://router.huggingface.co/v1/models"
+AGENTS_DIR = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(AGENTS_DIR))  # so the packages import when run as a script
 
-
-def fetch_models():
-    with urllib.request.urlopen(ROUTER_MODELS_URL, timeout=30) as response:
-        return json.load(response)["data"]
+from evaluation.pricing import fetch_models  # noqa: E402  pylint: disable=wrong-import-position
 
 
 def reads_images(model):
