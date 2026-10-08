@@ -1,0 +1,4 @@
+# Local development and tests only. The Docker image installs requirements.txt,
+# so nothing here ends up in production.
+-r requirements.txt
+pytest==9.1.1

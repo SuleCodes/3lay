@@ -324,6 +324,48 @@ Build from the inside out; each step teaches one concept.
 Rolepay works end to end after step 5, with a configuration written by hand.
 Boardy then replaces the hand-written configuration.
 
+### Step 2: Orchy's first graph (decided 2026-10-07)
+
+```
+START ─▶ load_inputs ─▶ extract ─▶ validate ─▶ END (completed)
+              │            │  ▲         │
+              │            │  └─────────┘ schema check failed: retry
+              │            ├─▶ extract     transient error: retry
+              ▼            ▼
+        END (failed)  END (failed)        permanent error, or still erroring
+                                          after the last attempt
+```
+
+**State** (the event's working memory; nodes return only the fields they change):
+
+| Field | Set by | Purpose |
+|---|---|---|
+| `event_id` | start | Identity; ends up in the envelope |
+| `document_path` | start | Where the document is (later a blob reference) |
+| `instructions`, `output_schema`, `schema_name` | start | From the client's configuration |
+| `max_attempts` | start | Retry limit from the configuration (default 3) |
+| `page_count` | `load_inputs` | Proves the document opened |
+| `extraction`, `usage` | `extract` | The parsed JSON and token counts |
+| `attempts` | `extract` | Tries so far in this run |
+| `checks` | `validate` | `{name, passed, message}` per check |
+| `status` | routing | `processing`, `completed` or `failed` |
+| `error_code`, `error_message` | any node | Why it failed (codes from the event lifecycle) |
+| `steps` | every node | The step timeline; accumulates instead of being replaced |
+
+Decisions:
+- **Page images are not in the state.** The state holds the document
+  reference and `extract` renders the pages itself, so a checkpointer (step 5)
+  never saves megabytes of images after every step. `load_inputs` only checks
+  the document opens, failing early with `document_unreadable`.
+- **Output that fails the JSON Schema check is retried,** within the same
+  attempt limit as transient errors. If it still fails after the last attempt,
+  the event is **completed with the failed check recorded**, so Justice and the
+  verdict flag it as `needs_review`. An event only fails when nothing usable
+  came back.
+- **Transient (retried):** timeouts, rate limits (429), provider errors (5xx),
+  and output that couldn't be parsed. **Permanent (fail at once):** unreadable
+  document, structured output not supported, bad token or other 4xx.
+
 ## Design on paper
 
 The three things defined before writing agent code. All agreed.

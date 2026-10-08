@@ -24,9 +24,12 @@ on 3.14.
 
 ```powershell
 py -3.11 -m venv .venv
-.venv\Scripts\python -m pip install -r requirements.txt
+.venv\Scripts\python -m pip install -r requirements-dev.txt
 copy .env.example .env
 ```
+
+`requirements-dev.txt` is `requirements.txt` plus test tools (pytest). The
+Docker image only installs `requirements.txt`.
 
 Put the App Configuration connection string in `.env` as
 `APP_CONFIG_CONNECTION_STRING`. That's the only local setting. Everything

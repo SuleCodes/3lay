@@ -1,0 +1,12 @@
+{
+  // In the multi-root workspace (3lay.code-workspace), each project has its own
+  // folder, so the root folder hides them to avoid showing every file twice.
+  // Root-level files (README, .gitignore, .vscode/launch.json, tools/) stay here.
+  "files.exclude": {
+    "agents": true,
+    "backend": true,
+    "frontend": true,
+    "infra/function": true,
+    "infra/cloudflare-worker": true
+  }
+}

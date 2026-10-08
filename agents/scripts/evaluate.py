@@ -1,7 +1,7 @@
 """Scores the latest saved run for each gold standard file.
 
 For every tmp/gold_standard/{stem}.json, finds the newest tmp/runs/{stem}_*.json
-saved by run_obed.py, and prints its score, cost and the fields that didn't match.
+saved by run_orchy.py, and prints its score, cost and the fields that didn't match.
 Costs use the provider's current price from Hugging Face's router.
 """
 
@@ -55,7 +55,7 @@ def main():
         stem = gold_path.stem
         run_path = latest_run(stem)
         if run_path is None:
-            print(f"{stem}: no runs yet (run scripts/run_obed.py for this fixture first)\n")
+            print(f"{stem}: no runs yet (run scripts/run_orchy.py for this fixture first)\n")
             continue
 
         gold = json.loads(gold_path.read_text(encoding="utf-8"))

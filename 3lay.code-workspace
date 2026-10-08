@@ -1,0 +1,14 @@
+{
+  // Open this file (File > Open Workspace from File) instead of the repo folder.
+  // Each project is its own folder, so each gets its own Python interpreter,
+  // import checking and test settings, from its own .vscode/settings.json.
+  "folders": [
+    { "name": "3lay (root)", "path": "." },
+    { "name": "agents", "path": "agents" },
+    { "name": "backend", "path": "backend" },
+    { "name": "frontend", "path": "frontend" },
+    { "name": "function", "path": "infra/function" },
+    { "name": "cloudflare-worker", "path": "infra/cloudflare-worker" }
+  ],
+  "settings": {}
+}
