@@ -160,3 +160,20 @@ def test_schema_failure_every_time_completes_with_the_failure_recorded(initial_s
     assert route(final) == [
         "load_inputs", "extract", "validate", "extract", "validate", "extract", "validate",
     ]
+
+
+def test_rules_are_recorded_but_never_cause_a_retry(initial_state, monkeypatch):
+    """A failed rule is information for Justice: the run completes first time."""
+    fake_obed(monkeypatch, {"issued_on": "0501-01-06"})  # valid date format, implausible date
+    initial_state["rules"] = [{
+        "id": "dates_plausible", "type": "date_within", "fields": ["issued_on"],
+        "days_before": 1095, "days_after": 31, "on_fail": "needs_review",
+    }]
+
+    final = build_graph().invoke(initial_state)
+
+    checks = {c["name"]: c for c in final["checks"]}
+    assert checks["matches_schema"]["passed"] is True
+    assert checks["dates_plausible"]["passed"] is False
+    assert final["status"] == "completed"
+    assert route(final) == ["load_inputs", "extract", "validate"]

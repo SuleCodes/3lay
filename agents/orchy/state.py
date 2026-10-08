@@ -18,6 +18,7 @@ class OrchyState(TypedDict, total=False):
     instructions: str
     output_schema: dict[str, Any]
     schema_name: str
+    rules: list[dict[str, Any]]  # the client's rules (data), run by validate
     max_attempts: int
 
     # Set by load_inputs.
@@ -28,7 +29,8 @@ class OrchyState(TypedDict, total=False):
     extraction: dict[str, Any] | None
     usage: dict[str, Any] | None
 
-    # Set by validate: one {"name", "passed", "message"} per check.
+    # Set by validate: one {"name", "passed", "message"} per check; rule checks
+    # also have "rule" and "on_fail". passed is None when a rule was skipped.
     checks: list[dict[str, Any]]
 
     # Outcome. status is "processing", "completed" or "failed"; error_kind is

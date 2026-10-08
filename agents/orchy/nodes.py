@@ -16,6 +16,7 @@ from dotenv import load_dotenv
 from obed.documents import pdf_to_image_blocks
 from obed.extract import create_model, extract as obed_extract
 from orchy.state import OrchyState
+from rules import run_rules
 
 AGENTS_DIR = Path(__file__).resolve().parent.parent
 
@@ -181,13 +182,16 @@ def schema_check(extraction, output_schema):
 def validate(state: OrchyState) -> dict:
     """Deterministic checks on the extraction. Client-neutral: no client's rules in code.
 
-    For now the only check is the client's own output schema. Business rules
-    (e.g. a line's totals adding up) come later as rules in the client's
-    configuration, run by a generic rule engine and added to these checks.
+    First the client's output schema, then the client's rules (state["rules"],
+    from its configuration), run by the generic rule engine in rules/. Each
+    check's passed is True, False, or None when a rule was skipped because a
+    value it needs is missing.
 
-    A schema failure is retried (another extract) while attempts are left; after
-    the last attempt the event completes anyway, with the failed check recorded,
-    so Justice and the verdict flag it as needs_review.
+    Only a schema failure is retried (another extract) while attempts are left;
+    after the last attempt the event completes anyway, with the failed check
+    recorded, so Justice and the verdict flag it as needs_review. Rules never
+    cause a retry: they run on whatever was extracted, and their failures are
+    information for Justice.
     """
     started_at = now()
     extraction = state.get("extraction")
@@ -195,19 +199,24 @@ def validate(state: OrchyState) -> dict:
     if extraction is None:
         checks = [check("matches_schema", False, "There's no extraction to check.")]
     else:
-        checks = [schema_check(extraction, state["output_schema"])]
+        checks = [
+            schema_check(extraction, state["output_schema"]),
+            *run_rules(state.get("rules", []), extraction),
+        ]
 
     schema_passed = checks[0]["passed"]
     attempts_left = state.get("attempts", 0) < state.get("max_attempts", DEFAULT_MAX_ATTEMPTS)
     retry = not schema_passed and attempts_left
-    failed = [c["name"] for c in checks if not c["passed"]]
+    failed = [c["name"] for c in checks if c["passed"] is False]
+    skipped = sum(1 for c in checks if c["passed"] is None)
 
     update = {
         "checks": checks,
         "steps": [step_record(
             "validate", started_at, "retry" if retry else "ok",
             "Failed: " + ", ".join(failed) if failed else None,
-            checks_passed=len(checks) - len(failed), checks_total=len(checks),
+            checks_passed=len(checks) - len(failed) - skipped,
+            checks_failed=len(failed), checks_skipped=skipped,
         )],
     }
     if not retry:

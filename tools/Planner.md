@@ -491,6 +491,46 @@ purchase orders):
 }
 ```
 
+#### Rule format (agreed 2026-10-08)
+
+The engine lives in `agents/rules/` and knows only rule *types*; each
+client's rules are data in its configuration (for now, files in
+`agents/tmp/rules/`). Every rule has:
+
+| Field | Meaning |
+|---|---|
+| `id` | Lower-case name; becomes the check's name |
+| `type` | `sum_equals`, `percentage_of`, `compare` or `date_within` (more types are added in code, deliberately) |
+| `scope` | Optional, e.g. `lines[]`: run the rule once per line, with paths relative to the line |
+| `on_fail` | `needs_review` or `reject`: how serious a failure is, for Justice and the verdict |
+| `message` | Shown when the rule fails |
+
+**Paths** are our own simple format, not JSONPath: field names separated by
+dots; `[]` means every item of a list (`deductions[].amount`); `[field=value]`
+keeps only matching items (`deductions[category=agency_commission].amount`).
+A path through a list gives the **sum** of the values (zero if the list is
+empty). In `sum_equals` terms, a leading `+`/`-` sets the sign and a trailing
+`?` means "missing counts as 0" (e.g. `+vat_charged?`).
+
+**Missing values skip the rule**, recorded as "skipped" with the reason, not
+failed: many fields are legitimately null on some documents.
+
+**Rules run on whatever was extracted,** even if the schema check failed;
+values that aren't usable make the rule skip. **Rules never cause a retry.**
+
+**Rule definitions are checked when they're loaded** (against a JSON Schema for
+rules), so a mistyped rule fails at load or approval time, never halfway
+through an event. This is also what Boardy's generated rules are checked against.
+
+Rolepay's starter rules (all `needs_review`):
+
+| Rule | Type | Checks |
+|---|---|---|
+| `line_totals_add_up` | `sum_equals`, per line | gross + VAT charged − deductions = net |
+| `totals_match_lines` | `sum_equals` | sum of line nets = `total_net` (skipped if no total printed) |
+| `commission_matches_rate` | `percentage_of`, per line | agency commission = gross × rate (skipped if no rate printed) |
+| `dates_plausible` | `date_within` | every date within 3 years before and 31 days after the run |
+
 #### Intake, billing and caps
 - **Intake:** for now anyone can send to a client's address. Allowlists and
   "known end users only" are later options.

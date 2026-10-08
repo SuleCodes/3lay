@@ -17,17 +17,29 @@ from dotenv import load_dotenv
 AGENTS_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(AGENTS_DIR))  # so the packages import when run as a script
 
-from orchy.graph import build_graph  # noqa: E402  pylint: disable=wrong-import-position
+# pylint: disable=wrong-import-position
+from orchy.graph import build_graph  # noqa: E402
+from rules import check_rule_definitions  # noqa: E402
 
 FIXTURE_PATH = AGENTS_DIR / "tmp" / "fixtures" / "1767784629512.pdf"
 SCHEMA_PATH = AGENTS_DIR / "tmp" / "schema" / "rolepay-income-statement.v1.json"
 SCHEMA_NAME = "income_statement"
+# The client's rules (data). Checked on load, so a mistyped rule fails here, not mid-run.
+RULES_PATH = AGENTS_DIR / "tmp" / "rules" / "rolepay-income-statement.v1.json"
 RUNS_DIR = AGENTS_DIR / "tmp" / "runs"
 
 # The client's instructions and retry limit. Later these come from the client's
 # configuration.
 INSTRUCTIONS = "Extract the document into the output schema."
 MAX_ATTEMPTS = 3
+
+
+def load_rules():
+    """The client's rules, checked before the run. No rules file means no rules."""
+    if not RULES_PATH.exists():
+        print(f"No rules file at {RULES_PATH}: running with the schema check only.")
+        return []
+    return check_rule_definitions(json.loads(RULES_PATH.read_text(encoding="utf-8")))
 
 
 def total_usage(steps):
@@ -77,6 +89,7 @@ def main():
         "instructions": INSTRUCTIONS,
         "output_schema": json.loads(SCHEMA_PATH.read_text(encoding="utf-8")),
         "schema_name": SCHEMA_NAME,
+        "rules": load_rules(),
         "max_attempts": MAX_ATTEMPTS,
         "attempts": 0,
         "steps": [],
@@ -93,6 +106,10 @@ def main():
         print(f"  {step['node']:<12} {step['outcome']:<7} {step.get('error') or ''}")
     if final_state.get("error_message"):
         print(f"error: {final_state.get('error_code')}: {final_state['error_message']}")
+    print("checks:")
+    labels = {True: "pass", False: "FAIL", None: "skip"}
+    for item in final_state.get("checks", []):
+        print(f"  {labels[item['passed']]:<5} {item['name']:<28} {item.get('message') or ''}")
 
 
 if __name__ == "__main__":
