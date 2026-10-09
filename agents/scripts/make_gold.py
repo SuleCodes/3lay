@@ -52,9 +52,9 @@ def happy_route(documents):
     """The route with no retries: each usable document extracted once, then validated."""
     usable = sum(1 for d in documents if d["status"] == "done")
     if usable == 0:
-        return ["load_inputs", "finish", "build_envelope"]
+        return ["load_inputs", "finish", "build_envelope", "deliver"]
     return ["load_inputs", *["extract"] * usable, *["validate"] * usable,
-            "finish", "build_envelope"]
+            "finish", "build_envelope", "deliver"]
 
 
 def existing_outputs(gold):

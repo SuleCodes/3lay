@@ -53,6 +53,7 @@ class OrchyState(TypedDict, total=False):
     output_schema: dict[str, Any]
     schema_name: str
     rules: list[dict[str, Any]]  # the client's rules (data), run by validate
+    destinations: list[dict[str, Any]]  # where envelopes go (noti/destinations.py)
     max_attempts: int          # per document
 
     # Set by load_inputs; each node after that returns the updated list.
@@ -61,6 +62,10 @@ class OrchyState(TypedDict, total=False):
 
     # Set by build_envelope: what the client receives (orchy/envelope.py).
     envelope: dict[str, Any]
+
+    # Set by deliver: one record per attempt, per destination (noti/delivery.py).
+    # The last record for a destination is its outcome: "delivered" or "gave_up".
+    deliveries: list[dict[str, Any]]
 
     # The event's outcome: "processing", then "completed" (at least one document
     # done) or "failed" (nothing usable). The error fields explain an event

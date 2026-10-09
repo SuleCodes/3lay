@@ -1,11 +1,12 @@
 """Orchy's graph: wires the nodes together and decides where each event goes next.
 
-    START -> load_inputs --+--> extract --+--> validate --+--> finish --> build_envelope --> END
-                           |       ^      |       |       |
-                           |       +------+       |       +--> extract
-                           |    a document to     |   a document's schema check failed,
-                           |    retry (transient  |   attempts left
-                           |    error)            |
+    START -> load_inputs --+--> extract --+--> validate --+--> finish
+                           |       ^      |       |       |       |
+                           |       +------+       |       |       v
+                           |    a document to     |       |    build_envelope --> deliver --> END
+                           |    retry (transient  |       |
+                           |    error)            |       +--> extract  a document's schema
+                           |                      |                     check failed, attempts left
                            +--> finish            +--> finish  nothing left to validate
              no usable attachments
 
@@ -17,7 +18,8 @@ a model: this is Obed's fixed-recipe mode.
 
 Every run ends at finish, which sets the event's status from all its
 documents ("completed" if any document is done, "failed" if none is), then
-build_envelope, which builds what the client receives.
+build_envelope, which builds what the client receives, then deliver, which
+sends it to the client's destinations.
 """
 
 from langgraph.graph import END, START, StateGraph
@@ -58,6 +60,7 @@ def build_graph():
     builder.add_node("validate", nodes.validate)
     builder.add_node("finish", nodes.finish)
     builder.add_node("build_envelope", nodes.build_envelope)
+    builder.add_node("deliver", nodes.deliver)
 
     builder.add_edge(START, "load_inputs")
     # The list after each routing function names every place it can send the
@@ -67,6 +70,7 @@ def build_graph():
                                   ["extract", "validate", "finish"])
     builder.add_conditional_edges("validate", route_after_validate, ["extract", "finish"])
     builder.add_edge("finish", "build_envelope")
-    builder.add_edge("build_envelope", END)
+    builder.add_edge("build_envelope", "deliver")
+    builder.add_edge("deliver", END)
 
     return builder.compile()

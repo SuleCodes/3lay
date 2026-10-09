@@ -24,6 +24,7 @@ AGENTS_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(AGENTS_DIR))  # so the packages import when run as a script
 
 # pylint: disable=wrong-import-position
+from noti.destinations import check_destinations  # noqa: E402
 from orchy.graph import build_graph  # noqa: E402
 from rules import check_rule_definitions  # noqa: E402
 
@@ -32,6 +33,9 @@ SCHEMA_PATH = AGENTS_DIR / "tmp" / "schema" / "rolepay-income-statement.v1.json"
 SCHEMA_NAME = "income_statement"
 # The client's rules (data). Checked on load, so a mistyped rule fails here, not mid-run.
 RULES_PATH = AGENTS_DIR / "tmp" / "rules" / "rolepay-income-statement.v1.json"
+# Where envelopes are delivered (part of the configuration). Set one up with
+# scripts/add_destination.py, which also puts its secret in agents/.env.
+DESTINATIONS_PATH = AGENTS_DIR / "tmp" / "destinations.json"
 RUNS_DIR = AGENTS_DIR / "tmp" / "runs"
 
 # The client's configuration. Later this comes from the database.
@@ -59,6 +63,15 @@ def load_rules():
         print(f"No rules file at {RULES_PATH}: running with the schema check only.")
         return []
     return check_rule_definitions(json.loads(RULES_PATH.read_text(encoding="utf-8")))
+
+
+def load_destinations():
+    """The client's destinations, checked before the run. No file means no deliveries."""
+    if not DESTINATIONS_PATH.exists():
+        print(f"No destinations at {DESTINATIONS_PATH}: nothing will be delivered. "
+              "Add one with scripts/add_destination.py <url>.")
+        return []
+    return check_destinations(json.loads(DESTINATIONS_PATH.read_text(encoding="utf-8")))
 
 
 def total_usage(steps):
@@ -106,6 +119,7 @@ def save_run(email_path, final_state, model_name, duration):
         ],
         "steps": final_state.get("steps", []),
         "envelope": final_state.get("envelope"),
+        "deliveries": final_state.get("deliveries", []),
     }
     run_path = RUNS_DIR / f"{email_path.stem}_{timestamp:%Y%m%d-%H%M%S}.json"
     run_path.parent.mkdir(parents=True, exist_ok=True)
@@ -145,6 +159,7 @@ def main():
         "output_schema": json.loads(SCHEMA_PATH.read_text(encoding="utf-8")),
         "schema_name": SCHEMA_NAME,
         "rules": load_rules(),
+        "destinations": load_destinations(),
         "max_attempts": MAX_ATTEMPTS,
         "steps": [],
     }
@@ -158,6 +173,11 @@ def main():
     print_summary(final_state)
     print("envelope (what the client receives):")
     print(json.dumps(final_state.get("envelope"), indent=2))
+    print("deliveries:")
+    for attempt in final_state.get("deliveries", []):
+        url = attempt["url"].split("?", 1)[0]  # never show a token in the query string
+        print(f"  {attempt['destination_id']} attempt {attempt['attempt']}: {attempt['status']}"
+              f" (HTTP {attempt['http_status']}) {url} {attempt.get('error') or ''}")
 
 
 if __name__ == "__main__":

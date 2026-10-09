@@ -5,17 +5,22 @@ LangGraph merges it in (see orchy/state.py).
 
 An event is one email with one or more documents. load_inputs finds them;
 extract and validate work through the documents that need them, one after
-another; finish decides the event's outcome from all of them.
+another; finish decides the event's outcome from all of them; build_envelope
+builds what the client receives, and deliver (Noti) sends it.
 """
 import os
+import time
 from datetime import datetime, timezone
 from functools import cache
 from pathlib import Path
 
+import httpx
 import jsonschema
 import openai
 from dotenv import load_dotenv
 
+from noti.delivery import deliver as deliver_to
+from noti.destinations import destination_secret
 from obed.documents import SUPPORTED_TYPES, page_count, to_image_blocks
 from obed.extract import create_model, extract as obed_extract
 from orchy.emails import read_attachment, read_attachments, read_sender
@@ -334,3 +339,45 @@ def build_envelope(state: OrchyState) -> dict:
         "envelope": envelope,
         "steps": [step_record("build_envelope", started_at, "ok", **envelope["summary"])],
     }
+
+
+# deliver (Noti)
+
+def http_client():
+    """The HTTP client for deliveries. Redirects aren't followed (see noti/delivery.py)."""
+    return httpx.Client(follow_redirects=False)
+
+
+def wait(seconds):
+    """Pause between delivery retries. A function so tests can make the waits instant."""
+    time.sleep(seconds)
+
+
+def deliver(state: OrchyState) -> dict:
+    """Delivers the envelope to each destination that wants this kind of event.
+
+    Each destination gets its own signed POSTs and retries (noti/delivery.py),
+    one after another, and every attempt is recorded in deliveries. Delivery
+    doesn't change the event's status: an event can be completed with its
+    delivery given up, and resent later.
+    """
+    envelope = state["envelope"]
+    wanted = [d for d in state.get("destinations", [])
+              if envelope["event_type"] in d["events"]]
+    deliveries, steps = [], []
+    with http_client() as client:
+        for destination in wanted:
+            started_at = now()
+            attempts = deliver_to(envelope, destination, destination_secret(destination["id"]),
+                                  client, sleep=wait)
+            last = attempts[-1]
+            deliveries.extend(attempts)
+            steps.append(step_record(
+                "deliver", started_at, "ok" if last["status"] == "delivered" else "failed",
+                last["error"] if last["status"] != "delivered" else None,
+                destination=destination["id"], attempts=len(attempts),
+                http_status=last["http_status"],
+            ))
+    if not wanted:
+        steps.append(step_record("deliver", now(), "ok", destinations=0))
+    return {"deliveries": deliveries, "steps": steps}
