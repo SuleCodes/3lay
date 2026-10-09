@@ -33,20 +33,28 @@ def png_bytes():
     return pixmap.tobytes("png")
 
 
-def write_email(path, *attachments, body="Please find my statement attached."):
-    """Writes a .eml like the one the ingest Function stores.
-
-    Each attachment is (file name, content type, bytes).
-    """
+def email_message(*attachments, sender="actor@example.com",
+                  body="Please find my statement attached."):
+    """An email with attachments. Each is (file name, content type, bytes), or an
+    EmailMessage, which is attached whole, like "Forward as attachment" does."""
     message = EmailMessage()
-    message["From"] = "actor@example.com"
+    message["From"] = sender
     message["To"] = "client@in.example.com"
     message["Subject"] = "My statement"
     message.set_content(body)
-    for name, content_type, data in attachments:
+    for attachment in attachments:
+        if isinstance(attachment, EmailMessage):
+            message.add_attachment(attachment)
+            continue
+        name, content_type, data = attachment
         maintype, subtype = content_type.split("/")
         message.add_attachment(data, maintype=maintype, subtype=subtype, filename=name)
-    path.write_bytes(message.as_bytes())
+    return message
+
+
+def write_email(path, *attachments, body="Please find my statement attached."):
+    """Writes a .eml like the one the ingest Function stores (see email_message)."""
+    path.write_bytes(email_message(*attachments, body=body).as_bytes())
     return str(path)
 
 

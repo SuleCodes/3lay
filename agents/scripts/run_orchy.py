@@ -92,6 +92,8 @@ def save_run(email_path, final_state, model_name, duration):
                 "index": d["index"],
                 "name": d["name"],
                 "content_type": d["content_type"],
+                "location": d.get("location"),
+                "forwarded_from": d.get("forwarded_from"),
                 "status": d["status"],
                 "attempts": d["attempts"],
                 "error_code": d["error_code"],

@@ -71,6 +71,8 @@ def new_document(attachment) -> DocumentState:
         "index": attachment.index,
         "name": attachment.name,
         "content_type": attachment.content_type,
+        "location": attachment.location,
+        "forwarded_from": attachment.forwarded_from,
         "status": "pending",
         "attempts": 0,
         "extraction": None,

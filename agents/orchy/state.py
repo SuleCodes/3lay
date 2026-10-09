@@ -16,9 +16,11 @@ from typing import Annotated, Any, TypedDict
 class DocumentState(TypedDict, total=False):
     """One attachment. Its bytes aren't here: they're read from the email when needed."""
 
-    index: int              # position among the email's attachments
+    index: int              # position among the email's attachments (forwarded ones included)
     name: str
     content_type: str
+    location: str           # where it sits, e.g. "1 > 0" inside a forwarded email
+    forwarded_from: str | None  # sender of the forwarded email it came from, if any
     page_count: int
 
     # "pending" -> extract -> "extracted" -> validate -> "done"

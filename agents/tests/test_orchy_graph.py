@@ -8,7 +8,7 @@ without a real provider. With several documents, calls happen in document order.
 import openai
 import pytest
 
-from conftest import api_error, pdf_bytes, png_bytes, write_email
+from conftest import api_error, email_message, pdf_bytes, png_bytes, write_email
 from orchy.graph import build_graph
 
 SCHEMA = {
@@ -190,3 +190,18 @@ def test_steps_accumulate_through_the_reducer(one_pdf, fake_model):
     final = run(one_pdf, steps=[{"node": "earlier", "outcome": "ok"}])
 
     assert route(final) == ["earlier", "load_inputs", "extract", "validate", "finish"]
+
+
+def test_documents_inside_a_forwarded_email_are_processed(tmp_path, fake_model):
+    forwarded = email_message(("statement.pdf", "application/pdf", pdf_bytes()),
+                              sender="agency@example.com")
+    path = tmp_path / "e.eml"
+    path.write_bytes(email_message(forwarded).as_bytes())
+    fake_model(VALID)
+
+    final = run(str(path))
+
+    assert final["status"] == "completed"
+    [doc] = final["documents"]
+    assert (doc["name"], doc["location"], doc["forwarded_from"]) == (
+        "statement.pdf", "0 > 0", "agency@example.com")
