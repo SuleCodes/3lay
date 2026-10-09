@@ -18,7 +18,8 @@ from dotenv import load_dotenv
 
 from obed.documents import SUPPORTED_TYPES, page_count, to_image_blocks
 from obed.extract import create_model, extract as obed_extract
-from orchy.emails import read_attachment, read_attachments
+from orchy.emails import read_attachment, read_attachments, read_sender
+from orchy.envelope import build_envelope as envelope_for
 from orchy.state import DocumentState, OrchyState
 from rules import run_rules
 
@@ -105,6 +106,7 @@ def load_inputs(state: OrchyState) -> dict:
     started_at = now()
     try:
         attachments = read_attachments(state["email_path"])
+        sender = state.get("sender") or read_sender(state["email_path"])
     except OSError as exc:
         message = f"Couldn't read the email: {exc}"
         return {
@@ -123,6 +125,7 @@ def load_inputs(state: OrchyState) -> dict:
                    "None of the email's attachments is a supported document (PDF, JPEG or PNG).")
         return {
             "documents": documents,
+            "sender": sender,
             "status": "failed",
             "error_code": "no_documents_found",
             "error_message": message,
@@ -132,6 +135,7 @@ def load_inputs(state: OrchyState) -> dict:
 
     return {
         "documents": documents,
+        "sender": sender,
         "status": "processing",
         "steps": [step_record("load_inputs", started_at, "ok",
                               attachments=len(documents), usable=usable)],
@@ -313,4 +317,20 @@ def finish(state: OrchyState) -> dict:
         "error_message": message,
         "steps": [step_record("finish", started_at, "failed", message,
                               error_code=error_code, **counts)],
+    }
+
+
+# build_envelope
+
+def build_envelope(state: OrchyState) -> dict:
+    """Builds what the client receives (orchy/envelope.py), ready for delivery.
+
+    A node rather than part of finish, so it shows in the step timeline and in
+    traces, and the next node (Noti's delivery) sends exactly what was built.
+    """
+    started_at = now()
+    envelope = envelope_for(state, finished_at=started_at)
+    return {
+        "envelope": envelope,
+        "steps": [step_record("build_envelope", started_at, "ok", **envelope["summary"])],
     }

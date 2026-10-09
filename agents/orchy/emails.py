@@ -92,6 +92,20 @@ def read_attachments(email_path):
     return found
 
 
+def read_sender(email_path):
+    """The From address, lower-cased, e.g. "ap@acme.com" from '"Acme" <AP@acme.com>'.
+
+    Later this comes from the Worker's X-3lay-Origin header instead, which has
+    already done the same with the envelope sender as a fallback.
+    """
+    with open(email_path, "rb") as file:
+        message = BytesParser(policy=policy.default).parse(file, headersonly=True)
+    sender = message["From"]
+    if sender is None or not sender.addresses:
+        return None
+    return sender.addresses[0].addr_spec.lower() or None
+
+
 def read_attachment(email_path, index):
     """One attachment's bytes. The email is read again rather than kept in the state."""
     return read_attachments(email_path)[index]

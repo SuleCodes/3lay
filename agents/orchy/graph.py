@@ -1,6 +1,6 @@
 """Orchy's graph: wires the nodes together and decides where each event goes next.
 
-    START -> load_inputs --+--> extract --+--> validate --+--> finish --> END
+    START -> load_inputs --+--> extract --+--> validate --+--> finish --> build_envelope --> END
                            |       ^      |       |       |
                            |       +------+       |       +--> extract
                            |    a document to     |   a document's schema check failed,
@@ -16,7 +16,8 @@ statuses and are the only place the flow is decided. They're plain code, not
 a model: this is Obed's fixed-recipe mode.
 
 Every run ends at finish, which sets the event's status from all its
-documents: "completed" if any document is done, "failed" if none is.
+documents ("completed" if any document is done, "failed" if none is), then
+build_envelope, which builds what the client receives.
 """
 
 from langgraph.graph import END, START, StateGraph
@@ -56,6 +57,7 @@ def build_graph():
     builder.add_node("extract", nodes.extract)
     builder.add_node("validate", nodes.validate)
     builder.add_node("finish", nodes.finish)
+    builder.add_node("build_envelope", nodes.build_envelope)
 
     builder.add_edge(START, "load_inputs")
     # The list after each routing function names every place it can send the
@@ -64,6 +66,7 @@ def build_graph():
     builder.add_conditional_edges("extract", route_after_extract,
                                   ["extract", "validate", "finish"])
     builder.add_conditional_edges("validate", route_after_validate, ["extract", "finish"])
-    builder.add_edge("finish", END)
+    builder.add_edge("finish", "build_envelope")
+    builder.add_edge("build_envelope", END)
 
     return builder.compile()

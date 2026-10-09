@@ -2,7 +2,7 @@
 
 from conftest import email_message, pdf_bytes, png_bytes, write_email
 from obed.documents import page_count, to_image_blocks
-from orchy.emails import MAX_DEPTH, read_attachment, read_attachments
+from orchy.emails import MAX_DEPTH, read_attachment, read_attachments, read_sender
 
 
 def test_reads_attachments_in_order_with_their_types(tmp_path):
@@ -111,3 +111,10 @@ def test_forwarding_deeper_than_the_limit_stops_opening_emails(tmp_path):
     [attachment] = read_attachments(path)
 
     assert attachment.content_type == "message/rfc822"  # left closed: unsupported
+
+
+def test_read_sender_gives_the_from_address_lower_cased(tmp_path):
+    path = tmp_path / "e.eml"
+    path.write_bytes(email_message(sender="Sam Smith <Sam.Smith@Example.com>").as_bytes())
+
+    assert read_sender(path) == "sam.smith@example.com"

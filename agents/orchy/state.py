@@ -43,7 +43,12 @@ class OrchyState(TypedDict, total=False):
 
     # Set when the run starts (later: from the event and the client's configuration).
     event_id: str
+    run: int                  # 1 for the first run; reprocessing makes 2, 3, ...
+    case_ref: str             # the case the event belongs to; defaults to its own event_id
+    received_at: str          # when the email arrived (later: from the queue message)
     email_path: str           # later: a Blob Storage reference
+    config_version: int       # which version of the client's configuration this run uses
+    document_type: str        # what the documents are (later: per document, from classification)
     instructions: str
     output_schema: dict[str, Any]
     schema_name: str
@@ -51,7 +56,11 @@ class OrchyState(TypedDict, total=False):
     max_attempts: int          # per document
 
     # Set by load_inputs; each node after that returns the updated list.
+    sender: str | None        # the email's From address (later: the Worker's X-3lay-Origin)
     documents: list[DocumentState]
+
+    # Set by build_envelope: what the client receives (orchy/envelope.py).
+    envelope: dict[str, Any]
 
     # The event's outcome: "processing", then "completed" (at least one document
     # done) or "failed" (nothing usable). The error fields explain an event

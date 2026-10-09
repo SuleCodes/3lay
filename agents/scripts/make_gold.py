@@ -9,7 +9,7 @@ A gold standard says what a perfect run of this email looks like:
       "verified": false,            <- set to true once you've checked it against the document
       "status": "completed",        <- the event's expected status
       "error_code": null,
-      "route": ["load_inputs", "extract", "validate", "finish"],   <- with no retries
+      "route": ["load_inputs", "extract", "validate", "finish", "build_envelope"],  <- no retries
       "documents": [
         {"index": 0, "name": "...", "status": "done", "error_code": null,
          "output": {...},           <- the correct extraction, field by field
@@ -40,8 +40,6 @@ from run_orchy import RULES_PATH, SCHEMA_PATH  # noqa: E402
 from orchy.nodes import schema_check  # noqa: E402
 from rules import check_rule_definitions, run_rules  # noqa: E402
 
-HAPPY_ROUTE_PER_DOCUMENT = ["extract", "validate"]
-
 
 def expected_checks(output, schema, rules):
     if output is None:
@@ -54,8 +52,9 @@ def happy_route(documents):
     """The route with no retries: each usable document extracted once, then validated."""
     usable = sum(1 for d in documents if d["status"] == "done")
     if usable == 0:
-        return ["load_inputs", "finish"]
-    return ["load_inputs", *["extract"] * usable, *["validate"] * usable, "finish"]
+        return ["load_inputs", "finish", "build_envelope"]
+    return ["load_inputs", *["extract"] * usable, *["validate"] * usable,
+            "finish", "build_envelope"]
 
 
 def existing_outputs(gold):

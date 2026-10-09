@@ -5,10 +5,12 @@ model gives the next answer on each call, which is how retries are tested
 without a real provider. With several documents, calls happen in document order.
 """
 
+import jsonschema
 import openai
 import pytest
 
 from conftest import api_error, email_message, pdf_bytes, png_bytes, write_email
+from orchy.envelope import ENVELOPE_SCHEMA
 from orchy.graph import build_graph
 
 SCHEMA = {
@@ -21,7 +23,8 @@ INVALID = {"issued_on": "10.12.2025"}  # fails the schema's date format
 
 
 def run(email_path, **fields):
-    return build_graph().invoke({
+    """Runs the graph, and checks every envelope it builds matches the client contract."""
+    final = build_graph().invoke({
         "event_id": "evt-1",
         "email_path": email_path,
         "instructions": "Extract it.",
@@ -31,10 +34,12 @@ def run(email_path, **fields):
         "steps": [],
         **fields,
     })
+    jsonschema.validate(final["envelope"], ENVELOPE_SCHEMA)
+    return final
 
 
 def route(final_state):
-    """The route the event took, e.g. ["load_inputs", "extract", "validate", "finish"]."""
+    """The route the event took, e.g. ["load_inputs", "extract", ..., "build_envelope"]."""
     return [step["node"] for step in final_state["steps"]]
 
 
@@ -61,7 +66,7 @@ def test_happy_path_one_document(one_pdf, fake_model):
 
     assert final["status"] == "completed"
     assert final["documents"][0]["extraction"] == VALID
-    assert route(final) == ["load_inputs", "extract", "validate", "finish"]
+    assert route(final) == ["load_inputs", "extract", "validate", "finish", "build_envelope"]
     assert final["event_id"] == "evt-1"  # fields no node touches pass through unchanged
 
 
@@ -77,7 +82,7 @@ def test_each_document_is_extracted_and_checked_on_its_own(two_documents, fake_m
     # One extract step and one validate step per document, in document order.
     assert [(s["node"], s.get("document")) for s in final["steps"]] == [
         ("load_inputs", None), ("extract", 0), ("extract", 1),
-        ("validate", 0), ("validate", 1), ("finish", None)]
+        ("validate", 0), ("validate", 1), ("finish", None), ("build_envelope", None)]
 
 
 def test_an_unsupported_attachment_doesnt_stop_the_others(tmp_path, fake_model):
@@ -101,7 +106,7 @@ def test_email_without_usable_attachments_fails_without_calling_the_model(tmp_pa
 
     assert final["status"] == "failed"
     assert final["error_code"] == "no_documents_found"
-    assert route(final) == ["load_inputs", "finish"]
+    assert route(final) == ["load_inputs", "finish", "build_envelope"]
     assert not calls
 
 
@@ -126,7 +131,7 @@ def test_transient_errors_every_time_fail_the_event_after_the_last_attempt(one_p
     assert final["status"] == "failed"
     assert final["error_code"] == "processing_error"
     assert final["documents"][0]["attempts"] == 3
-    assert route(final) == ["load_inputs", "extract", "extract", "extract", "finish"]
+    assert route(final) == ["load_inputs", "extract", "extract", "extract", "finish", "build_envelope"]
     assert "Gave up after 3 attempts" in final["error_message"]
 
 
@@ -137,7 +142,7 @@ def test_permanent_error_fails_without_retrying(one_pdf, fake_model):
 
     assert final["status"] == "failed"
     assert final["documents"][0]["attempts"] == 1
-    assert route(final) == ["load_inputs", "extract", "finish"]
+    assert route(final) == ["load_inputs", "extract", "finish", "build_envelope"]
 
 
 def test_one_failed_document_doesnt_fail_the_event(two_documents, fake_model):
@@ -156,7 +161,7 @@ def test_schema_failure_is_retried_then_succeeds(one_pdf, fake_model):
 
     assert final["status"] == "completed"
     assert final["documents"][0]["checks"][0]["passed"]
-    assert route(final) == ["load_inputs", "extract", "validate", "extract", "validate", "finish"]
+    assert route(final) == ["load_inputs", "extract", "validate", "extract", "validate", "finish", "build_envelope"]
 
 
 def test_schema_failure_every_time_completes_with_the_failure_recorded(one_pdf, fake_model):
@@ -180,7 +185,7 @@ def test_rules_are_recorded_but_never_cause_a_retry(one_pdf, fake_model):
     checks = {c["name"]: c for c in final["documents"][0]["checks"]}
     assert checks["matches_schema"]["passed"] is True
     assert checks["dates_plausible"]["passed"] is False
-    assert route(final) == ["load_inputs", "extract", "validate", "finish"]
+    assert route(final) == ["load_inputs", "extract", "validate", "finish", "build_envelope"]
 
 
 def test_steps_accumulate_through_the_reducer(one_pdf, fake_model):
@@ -189,7 +194,7 @@ def test_steps_accumulate_through_the_reducer(one_pdf, fake_model):
 
     final = run(one_pdf, steps=[{"node": "earlier", "outcome": "ok"}])
 
-    assert route(final) == ["earlier", "load_inputs", "extract", "validate", "finish"]
+    assert route(final) == ["earlier", "load_inputs", "extract", "validate", "finish", "build_envelope"]
 
 
 def test_documents_inside_a_forwarded_email_are_processed(tmp_path, fake_model):
@@ -205,3 +210,32 @@ def test_documents_inside_a_forwarded_email_are_processed(tmp_path, fake_model):
     [doc] = final["documents"]
     assert (doc["name"], doc["location"], doc["forwarded_from"]) == (
         "statement.pdf", "0 > 0", "agency@example.com")
+
+
+# The envelope: run() above also checks every envelope matches the client contract.
+
+def test_the_envelope_reflects_the_run(two_documents, fake_model):
+    rules = [{"id": "dates_plausible", "type": "date_within", "fields": ["issued_on"],
+              "days_before": 1095, "days_after": 31, "on_fail": "needs_review"}]
+    fake_model(VALID, {"issued_on": "0501-01-06"})
+
+    envelope = run(two_documents, rules=rules)["envelope"]
+
+    assert (envelope["event_type"], envelope["status"]) == ("event.completed", "completed")
+    assert envelope["sender"] == "actor@example.com"
+    assert envelope["summary"] == {"accepted": 1, "needs_review": 1, "rejected": 0}
+    assert [i["verdict"] for i in envelope["items"]] == ["accepted", "needs_review"]
+    assert envelope["items"][1]["reasons"][0].startswith("dates_plausible:")
+
+
+def test_a_failed_event_lists_the_rejected_attachments(tmp_path, fake_model):
+    fake_model(VALID)
+
+    envelope = run(write_email(tmp_path / "e.eml",
+                               ("notes.docx", "application/msword", b"x")))["envelope"]
+
+    assert envelope["event_type"] == "event.failed"
+    assert envelope["error"]["code"] == "no_documents_found"
+    [item] = envelope["items"]
+    assert (item["verdict"], item["error"]["code"], item["data"]) == (
+        "rejected", "unsupported_file_type", None)

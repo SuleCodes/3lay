@@ -15,7 +15,7 @@ import os
 import sys
 import time
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -34,8 +34,9 @@ SCHEMA_NAME = "income_statement"
 RULES_PATH = AGENTS_DIR / "tmp" / "rules" / "rolepay-income-statement.v1.json"
 RUNS_DIR = AGENTS_DIR / "tmp" / "runs"
 
-# The client's instructions and retry limit. Later these come from the client's
-# configuration.
+# The client's configuration. Later this comes from the database.
+CONFIG_VERSION = 1
+DOCUMENT_TYPE = "income_statement"
 INSTRUCTIONS = "Extract the document into the output schema."
 MAX_ATTEMPTS = 3
 
@@ -104,6 +105,7 @@ def save_run(email_path, final_state, model_name, duration):
             for d in final_state.get("documents", [])
         ],
         "steps": final_state.get("steps", []),
+        "envelope": final_state.get("envelope"),
     }
     run_path = RUNS_DIR / f"{email_path.stem}_{timestamp:%Y%m%d-%H%M%S}.json"
     run_path.parent.mkdir(parents=True, exist_ok=True)
@@ -134,7 +136,11 @@ def main():
 
     initial_state = {
         "event_id": str(uuid.uuid4()),
+        "run": 1,
+        "received_at": datetime.now(timezone.utc).isoformat(timespec="milliseconds"),
         "email_path": str(email_path),
+        "config_version": CONFIG_VERSION,
+        "document_type": DOCUMENT_TYPE,
         "instructions": INSTRUCTIONS,
         "output_schema": json.loads(SCHEMA_PATH.read_text(encoding="utf-8")),
         "schema_name": SCHEMA_NAME,
@@ -150,6 +156,8 @@ def main():
     run_path = save_run(email_path, final_state, os.environ["OBED_MODEL"], duration)
     print(f"Saved run to {run_path}")
     print_summary(final_state)
+    print("envelope (what the client receives):")
+    print(json.dumps(final_state.get("envelope"), indent=2))
 
 
 if __name__ == "__main__":
