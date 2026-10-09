@@ -1,17 +1,14 @@
 """Tests for the whole graph: real nodes and routing, with only the model call faked.
 
-Each test is one route through the graph. The fake model can give a different
-answer on each attempt, which is how retries are tested without a real provider.
+Each test is one route through the graph, starting from a raw email. The fake
+model gives the next answer on each call, which is how retries are tested
+without a real provider. With several documents, calls happen in document order.
 """
 
-from types import SimpleNamespace
-
-import httpx
 import openai
-import pymupdf
 import pytest
 
-from orchy import nodes
+from conftest import api_error, pdf_bytes, png_bytes, write_email
 from orchy.graph import build_graph
 
 SCHEMA = {
@@ -19,161 +16,177 @@ SCHEMA = {
     "required": ["issued_on"],
     "properties": {"issued_on": {"type": "string", "format": "date"}},
 }
-USAGE = {"input_tokens": 3000, "output_tokens": 1000, "total_tokens": 4000}
 VALID = {"issued_on": "2026-01-07"}
 INVALID = {"issued_on": "10.12.2025"}  # fails the schema's date format
 
 
-def api_error(error_class, status):
-    request = httpx.Request("POST", "https://router.huggingface.co/v1/chat/completions")
-    return error_class("simulated", response=httpx.Response(status, request=request), body=None)
-
-
-@pytest.fixture
-def initial_state(tmp_path, monkeypatch):
-    pdf = tmp_path / "document.pdf"
-    doc = pymupdf.open()
-    doc.new_page()
-    doc.save(pdf)
-    doc.close()
-    monkeypatch.setattr(nodes, "obed_model", lambda: (object(), "test/model:provider"))
-    return {
+def run(email_path, **fields):
+    return build_graph().invoke({
         "event_id": "evt-1",
-        "document_path": str(pdf),
+        "email_path": email_path,
         "instructions": "Extract it.",
         "output_schema": SCHEMA,
         "schema_name": "document",
         "max_attempts": 3,
-        "attempts": 0,
         "steps": [],
-    }
-
-
-def fake_obed(monkeypatch, *answers):
-    """Each call to the model gets the next answer: a dict to return, or an error to raise.
-
-    The last answer repeats if the graph asks more times than there are answers.
-    """
-    remaining = list(answers)
-
-    def obed_extract(*_args):
-        answer = remaining.pop(0) if len(remaining) > 1 else remaining[0]
-        if isinstance(answer, Exception):
-            raise answer
-        return {"parsed": answer, "parsing_error": None,
-                "raw": SimpleNamespace(usage_metadata=USAGE)}
-
-    monkeypatch.setattr(nodes, "obed_extract", obed_extract)
+        **fields,
+    })
 
 
 def route(final_state):
-    """The route the event took, e.g. ["load_inputs", "extract", "validate"]."""
+    """The route the event took, e.g. ["load_inputs", "extract", "validate", "finish"]."""
     return [step["node"] for step in final_state["steps"]]
 
 
-def test_happy_path_completes_first_time(initial_state, monkeypatch):
-    fake_obed(monkeypatch, VALID)
+def statuses(final_state):
+    return [d["status"] for d in final_state["documents"]]
 
-    final = build_graph().invoke(initial_state)
+
+@pytest.fixture
+def one_pdf(tmp_path):
+    return write_email(tmp_path / "e.eml", ("statement.pdf", "application/pdf", pdf_bytes()))
+
+
+@pytest.fixture
+def two_documents(tmp_path):
+    return write_email(tmp_path / "e.eml",
+                       ("jan.pdf", "application/pdf", pdf_bytes()),
+                       ("feb-photo.png", "image/png", png_bytes()))
+
+
+def test_happy_path_one_document(one_pdf, fake_model):
+    fake_model(VALID)
+
+    final = run(one_pdf)
 
     assert final["status"] == "completed"
-    assert final["extraction"] == VALID
-    assert final["attempts"] == 1
-    assert route(final) == ["load_inputs", "extract", "validate"]
+    assert final["documents"][0]["extraction"] == VALID
+    assert route(final) == ["load_inputs", "extract", "validate", "finish"]
     assert final["event_id"] == "evt-1"  # fields no node touches pass through unchanged
 
 
-def test_steps_accumulate_through_the_reducer(initial_state, monkeypatch):
-    """Each node returns a one-item steps list; the reducer adds them up, not replaces."""
-    fake_obed(monkeypatch, VALID)
-    initial_state["steps"] = [{"node": "earlier", "outcome": "ok"}]
+def test_each_document_is_extracted_and_checked_on_its_own(two_documents, fake_model):
+    calls = fake_model({"issued_on": "2026-01-31"}, {"issued_on": "2026-02-28"})
 
-    final = build_graph().invoke(initial_state)
-
-    assert route(final) == ["earlier", "load_inputs", "extract", "validate"]
-
-
-def test_unreadable_document_fails_without_calling_the_model(initial_state, monkeypatch):
-    fake_obed(monkeypatch, VALID)
-    initial_state["document_path"] = "does-not-exist.pdf"
-
-    final = build_graph().invoke(initial_state)
-
-    assert final["status"] == "failed"
-    assert final["error_code"] == "document_unreadable"
-    assert route(final) == ["load_inputs", "fail"]
-
-
-def test_transient_error_is_retried_then_succeeds(initial_state, monkeypatch):
-    fake_obed(monkeypatch, api_error(openai.RateLimitError, 429), VALID)
-
-    final = build_graph().invoke(initial_state)
+    final = run(two_documents)
 
     assert final["status"] == "completed"
-    assert final["attempts"] == 2
-    assert route(final) == ["load_inputs", "extract", "extract", "validate"]
-    assert [s["outcome"] for s in final["steps"] if s["node"] == "extract"] == ["retry", "ok"]
+    assert [d["extraction"]["issued_on"] for d in final["documents"]] == [
+        "2026-01-31", "2026-02-28"]
+    assert len(calls) == 2
+    # One extract step and one validate step per document, in document order.
+    assert [(s["node"], s.get("document")) for s in final["steps"]] == [
+        ("load_inputs", None), ("extract", 0), ("extract", 1),
+        ("validate", 0), ("validate", 1), ("finish", None)]
 
 
-def test_transient_errors_every_time_fail_after_the_last_attempt(initial_state, monkeypatch):
-    fake_obed(monkeypatch, api_error(openai.InternalServerError, 503))
+def test_an_unsupported_attachment_doesnt_stop_the_others(tmp_path, fake_model):
+    path = write_email(tmp_path / "e.eml",
+                       ("statement.pdf", "application/pdf", pdf_bytes()),
+                       ("notes.docx", "application/msword", b"word document"))
+    calls = fake_model(VALID)
 
-    final = build_graph().invoke(initial_state)
+    final = run(path)
+
+    assert final["status"] == "completed"
+    assert statuses(final) == ["done", "failed"]
+    assert final["documents"][1]["error_code"] == "unsupported_file_type"
+    assert len(calls) == 1  # the .docx never reaches the model
+
+
+def test_email_without_usable_attachments_fails_without_calling_the_model(tmp_path, fake_model):
+    calls = fake_model(VALID)
+
+    final = run(write_email(tmp_path / "e.eml", ("notes.docx", "application/msword", b"x")))
+
+    assert final["status"] == "failed"
+    assert final["error_code"] == "no_documents_found"
+    assert route(final) == ["load_inputs", "finish"]
+    assert not calls
+
+
+def test_transient_error_retries_only_the_document_that_needs_it(two_documents, fake_model):
+    calls = fake_model(VALID, api_error(openai.RateLimitError, 429), VALID)
+
+    final = run(two_documents)
+
+    assert final["status"] == "completed"
+    assert statuses(final) == ["done", "done"]
+    assert len(calls) == 3  # document 0 once, document 1 twice
+    assert [(s["node"], s.get("document"), s["outcome"]) for s in final["steps"]
+            if s["node"] == "extract"] == [
+        ("extract", 0, "ok"), ("extract", 1, "retry"), ("extract", 1, "ok")]
+
+
+def test_transient_errors_every_time_fail_the_event_after_the_last_attempt(one_pdf, fake_model):
+    fake_model(api_error(openai.InternalServerError, 503))
+
+    final = run(one_pdf)
 
     assert final["status"] == "failed"
     assert final["error_code"] == "processing_error"
-    assert final["attempts"] == 3
-    assert route(final) == ["load_inputs", "extract", "extract", "extract", "fail"]
+    assert final["documents"][0]["attempts"] == 3
+    assert route(final) == ["load_inputs", "extract", "extract", "extract", "finish"]
     assert "Gave up after 3 attempts" in final["error_message"]
 
 
-def test_permanent_error_fails_without_retrying(initial_state, monkeypatch):
-    fake_obed(monkeypatch, api_error(openai.AuthenticationError, 401))
+def test_permanent_error_fails_without_retrying(one_pdf, fake_model):
+    fake_model(api_error(openai.AuthenticationError, 401))
 
-    final = build_graph().invoke(initial_state)
+    final = run(one_pdf)
 
     assert final["status"] == "failed"
-    assert final["error_code"] == "processing_error"
-    assert final["attempts"] == 1
-    assert route(final) == ["load_inputs", "extract", "fail"]
+    assert final["documents"][0]["attempts"] == 1
+    assert route(final) == ["load_inputs", "extract", "finish"]
 
 
-def test_schema_failure_is_retried_then_succeeds(initial_state, monkeypatch):
-    fake_obed(monkeypatch, INVALID, VALID)
+def test_one_failed_document_doesnt_fail_the_event(two_documents, fake_model):
+    fake_model(VALID, api_error(openai.BadRequestError, 400))
 
-    final = build_graph().invoke(initial_state)
+    final = run(two_documents)
 
-    assert final["status"] == "completed"
-    assert final["checks"][0]["passed"]
-    assert route(final) == ["load_inputs", "extract", "validate", "extract", "validate"]
+    assert final["status"] == "completed"  # something usable came back
+    assert statuses(final) == ["done", "failed"]
 
 
-def test_schema_failure_every_time_completes_with_the_failure_recorded(initial_state, monkeypatch):
-    """Your decision: after the last attempt, complete anyway so Justice flags it needs_review."""
-    fake_obed(monkeypatch, INVALID)
+def test_schema_failure_is_retried_then_succeeds(one_pdf, fake_model):
+    fake_model(INVALID, VALID)
 
-    final = build_graph().invoke(initial_state)
+    final = run(one_pdf)
 
     assert final["status"] == "completed"
-    assert not final["checks"][0]["passed"]
-    assert final["attempts"] == 3
-    assert route(final) == [
-        "load_inputs", "extract", "validate", "extract", "validate", "extract", "validate",
-    ]
+    assert final["documents"][0]["checks"][0]["passed"]
+    assert route(final) == ["load_inputs", "extract", "validate", "extract", "validate", "finish"]
 
 
-def test_rules_are_recorded_but_never_cause_a_retry(initial_state, monkeypatch):
-    """A failed rule is information for Justice: the run completes first time."""
-    fake_obed(monkeypatch, {"issued_on": "0501-01-06"})  # valid date format, implausible date
-    initial_state["rules"] = [{
-        "id": "dates_plausible", "type": "date_within", "fields": ["issued_on"],
-        "days_before": 1095, "days_after": 31, "on_fail": "needs_review",
-    }]
+def test_schema_failure_every_time_completes_with_the_failure_recorded(one_pdf, fake_model):
+    """After the last attempt the document is done anyway, so Justice flags it needs_review."""
+    fake_model(INVALID)
 
-    final = build_graph().invoke(initial_state)
+    final = run(one_pdf)
 
-    checks = {c["name"]: c for c in final["checks"]}
+    assert final["status"] == "completed"
+    assert final["documents"][0]["checks"][0]["passed"] is False
+    assert final["documents"][0]["attempts"] == 3
+
+
+def test_rules_are_recorded_but_never_cause_a_retry(one_pdf, fake_model):
+    fake_model({"issued_on": "0501-01-06"})  # valid date format, implausible date
+    rules = [{"id": "dates_plausible", "type": "date_within", "fields": ["issued_on"],
+              "days_before": 1095, "days_after": 31, "on_fail": "needs_review"}]
+
+    final = run(one_pdf, rules=rules)
+
+    checks = {c["name"]: c for c in final["documents"][0]["checks"]}
     assert checks["matches_schema"]["passed"] is True
     assert checks["dates_plausible"]["passed"] is False
-    assert final["status"] == "completed"
-    assert route(final) == ["load_inputs", "extract", "validate"]
+    assert route(final) == ["load_inputs", "extract", "validate", "finish"]
+
+
+def test_steps_accumulate_through_the_reducer(one_pdf, fake_model):
+    """Each node returns its own step records; the reducer adds them up, not replaces."""
+    fake_model(VALID)
+
+    final = run(one_pdf, steps=[{"node": "earlier", "outcome": "ok"}])
+
+    assert route(final) == ["earlier", "load_inputs", "extract", "validate", "finish"]

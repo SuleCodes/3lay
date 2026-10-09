@@ -366,6 +366,32 @@ Decisions:
   and output that couldn't be parsed. **Permanent (fail at once):** unreadable
   document, structured output not supported, bad token or other 4xx.
 
+### End-to-end slice (agreed 2026-10-08)
+
+Before Justice and before perfecting the gold standard: get one email all the
+way from the inbox to a client's webhook, then improve each part on a pipeline
+that already runs. Built locally first (E1–E3), then made real (E4–E5), then
+deployed (E6).
+
+| # | Step | Proves |
+|---|---|---|
+| E1 | **Email to documents:** Orchy takes the raw email (`.eml`) the Function stores; each attachment becomes a document | Real input format |
+| E2 | **Envelope, with a verdict from the checks:** all passed → `accepted`; a `needs_review` rule failed → `needs_review`; a `reject` rule failed → `rejected` | Real output format |
+| E3 | **Noti:** the envelope POSTed to the client's webhook, HMAC-signed, with retries and a delivery record | Delivery |
+| E4 | **Client configuration in Postgres** (Alembic migration in the backend; Rolepay added by hand until Boardy exists) | No more `tmp/` configuration |
+| E5 | **Event records** (`events`, `event_steps`) in Postgres | A history of every run |
+| E6 | **Queue job on Container Apps:** wakes on each ingest queue message, runs the graph | Fully automatic |
+
+Decisions:
+- **Justice comes after the slice.** Until then the verdict comes from the
+  checks alone; Justice later slots in between `validate` and delivery, adding
+  confidence, and is evaluated against the gold standard.
+- **Several attachments are processed one after another** for now. Parallel
+  fan-out and classification come later.
+- **Test deliveries go to webhook.site** (a public test endpoint), so only
+  invented documents are used for delivery tests. Signature checking is
+  covered by unit tests, since webhook.site doesn't verify signatures.
+
 ## Design on paper
 
 The three things defined before writing agent code. All agreed.

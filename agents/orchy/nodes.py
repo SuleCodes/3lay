@@ -2,6 +2,10 @@
 
 Nodes never modify the state they're given: they return a dict of updates, and
 LangGraph merges it in (see orchy/state.py).
+
+An event is one email with one or more documents. load_inputs finds them;
+extract and validate work through the documents that need them, one after
+another; finish decides the event's outcome from all of them.
 """
 import os
 from datetime import datetime, timezone
@@ -10,12 +14,12 @@ from pathlib import Path
 
 import jsonschema
 import openai
-import pymupdf
 from dotenv import load_dotenv
 
-from obed.documents import pdf_to_image_blocks
+from obed.documents import SUPPORTED_TYPES, page_count, to_image_blocks
 from obed.extract import create_model, extract as obed_extract
-from orchy.state import OrchyState
+from orchy.emails import read_attachment, read_attachments
+from orchy.state import DocumentState, OrchyState
 from rules import run_rules
 
 AGENTS_DIR = Path(__file__).resolve().parent.parent
@@ -50,43 +54,89 @@ def step_record(node, started_at, outcome, error=None, **details):
     }
 
 
-def load_inputs(state: OrchyState) -> dict:
-    """Checks the document opens and has pages, so a bad file fails early and cheaply.
+def max_attempts(state):
+    return state.get("max_attempts", DEFAULT_MAX_ATTEMPTS)
 
-    The pages aren't rendered here: extract renders them itself, so the images
-    never sit in the state (see the step 2 decisions in tools/Planner.md).
+
+def failed_document(document, code, message):
+    """The document can't be processed and retrying won't help."""
+    return {**document, "status": "failed", "error_code": code,
+            "error_kind": "permanent", "error_message": message}
+
+
+# load_inputs
+
+def new_document(attachment) -> DocumentState:
+    document = {
+        "index": attachment.index,
+        "name": attachment.name,
+        "content_type": attachment.content_type,
+        "status": "pending",
+        "attempts": 0,
+        "extraction": None,
+        "usage": None,
+        "checks": [],
+        "error_code": None,
+        "error_kind": None,
+        "error_message": None,
+    }
+    if attachment.content_type not in SUPPORTED_TYPES:
+        return failed_document(document, "unsupported_file_type",
+                               f"{attachment.content_type} isn't a supported document type.")
+    try:
+        pages = page_count(attachment.data, attachment.content_type)
+    except Exception as exc:  # pylint: disable=broad-exception-caught
+        return failed_document(document, "document_unreadable", f"Couldn't open it: {exc}")
+    if pages == 0:
+        return failed_document(document, "document_unreadable", "It has no pages.")
+    return {**document, "page_count": pages}
+
+
+def load_inputs(state: OrchyState) -> dict:
+    """Finds the email's attachments and checks each one opens, so bad files fail early.
+
+    Unsupported or unreadable attachments are recorded as failed documents (the
+    client sees why), not dropped. The event fails only if nothing is usable.
+    Pages aren't rendered here, and no bytes go into the state: extract reads
+    each attachment from the email when it needs it.
     """
     started_at = now()
     try:
-        with pymupdf.open(state["document_path"]) as doc:
-            page_count = doc.page_count
-    except Exception as exc:  # pylint: disable=broad-exception-caught
-        # Missing, corrupt or not a document at all: retrying won't help.
-        message = f"Couldn't open the document: {exc}"
+        attachments = read_attachments(state["email_path"])
+    except OSError as exc:
+        message = f"Couldn't read the email: {exc}"
         return {
+            "documents": [],
             "status": "failed",
             "error_code": "document_unreadable",
-            "error_kind": "permanent",
             "error_message": message,
             "steps": [step_record("load_inputs", started_at, "failed", message)],
         }
 
-    if page_count == 0:
-        message = "The document has no pages."
+    documents = [new_document(attachment) for attachment in attachments]
+    usable = sum(1 for d in documents if d["status"] == "pending")
+
+    if usable == 0:
+        message = ("The email has no attachments." if not documents else
+                   "None of the email's attachments is a supported document (PDF, JPEG or PNG).")
         return {
+            "documents": documents,
             "status": "failed",
-            "error_code": "document_unreadable",
-            "error_kind": "permanent",
+            "error_code": "no_documents_found",
             "error_message": message,
-            "steps": [step_record("load_inputs", started_at, "failed", message)],
+            "steps": [step_record("load_inputs", started_at, "failed", message,
+                                  attachments=len(documents), usable=0)],
         }
 
     return {
+        "documents": documents,
         "status": "processing",
-        "page_count": page_count,
-        "steps": [step_record("load_inputs", started_at, "ok", page_count=page_count)],
+        "steps": [step_record("load_inputs", started_at, "ok",
+                              attachments=len(documents), usable=usable)],
     }
 
+
+# extract
 
 @cache
 def obed_model():
@@ -99,64 +149,72 @@ def obed_model():
     return create_model(name, os.environ["OBED_BASE_URL"], os.environ["HF_TOKEN"]), name
 
 
-def extract(state: OrchyState) -> dict:
-    """Runs Obed on the document and records the attempt.
-
-    On an error it doesn't decide whether to retry: it reports error_kind
-    ("transient" or "permanent") and the routing decides, using attempts and
-    max_attempts. It always returns attempts, so the routing can count tries.
-    """
+def extract_document(state, document):
+    """Runs Obed on one document. Returns (updated document, step record)."""
     started_at = now()
-    attempts = state.get("attempts", 0) + 1
+    attempts = document["attempts"] + 1
     model, model_name = obed_model()
+    document = {**document, "attempts": attempts}
 
-    def failure(kind, code, message, usage=None):
-        return {
-            "attempts": attempts,
-            "error_kind": kind,
-            "error_code": code,
-            "error_message": message,
-            "steps": [step_record(
-                "extract", started_at,
-                "retry" if kind == "transient" else "failed", message,
-                attempt=attempts, model=model_name, usage=usage,
-            )],
-        }
+    def outcome(updated, usage=None):
+        step = step_record(
+            "extract", started_at,
+            {"extracted": "ok", "retry": "retry"}.get(updated["status"], "failed"),
+            updated["error_message"],
+            document=document["index"], attempt=attempts, model=model_name, usage=usage,
+        )
+        return updated, step
+
+    def error(kind, code, message, usage=None):
+        # A transient error is retried while this document has attempts left.
+        retry = kind == "transient" and attempts < max_attempts(state)
+        if kind == "transient" and not retry:
+            message = f"Gave up after {attempts} attempts. Last error: {message}"
+        return outcome({**document, "status": "retry" if retry else "failed",
+                        "error_code": code, "error_kind": kind, "error_message": message}, usage)
 
     try:
-        inputs = pdf_to_image_blocks(state["document_path"])
+        attachment = read_attachment(state["email_path"], document["index"])
+        inputs = to_image_blocks(attachment.data, attachment.content_type)
     except Exception as exc:  # pylint: disable=broad-exception-caught
-        # The document opened in load_inputs but a page wouldn't render.
-        return failure("permanent", "document_unreadable", f"Couldn't render the document: {exc}")
+        return error("permanent", "document_unreadable", f"Couldn't render the document: {exc}")
 
     try:
         response = obed_extract(
             model, state["instructions"], inputs, state["output_schema"], state["schema_name"]
         )
     except TRANSIENT_API_ERRORS as exc:
-        return failure("transient", "processing_error", f"{type(exc).__name__}: {exc}")
+        return error("transient", "processing_error", f"{type(exc).__name__}: {exc}")
     except openai.APIStatusError as exc:
-        return failure("permanent", "processing_error", f"{type(exc).__name__}: {exc}")
+        return error("permanent", "processing_error", f"{type(exc).__name__}: {exc}")
 
     usage = response["raw"].usage_metadata
     if response["parsing_error"] is not None:
         # The call worked but no valid JSON came back: worth another try.
-        return failure("transient", "processing_error",
-                       f"Output couldn't be parsed: {response['parsing_error']}", usage)
+        return error("transient", "processing_error",
+                     f"Output couldn't be parsed: {response['parsing_error']}", usage)
 
-    return {
-        "attempts": attempts,
-        "extraction": response["parsed"],
-        "usage": usage,
-        "error_kind": None,
-        "error_code": None,
-        "error_message": None,
-        "steps": [step_record(
-            "extract", started_at, "ok",
-            attempt=attempts, model=model_name, usage=usage,
-        )],
-    }
+    return outcome({**document, "status": "extracted", "extraction": response["parsed"],
+                    "usage": usage, "error_code": None, "error_kind": None,
+                    "error_message": None}, usage)
 
+
+def extract(state: OrchyState) -> dict:
+    """Runs Obed on every document waiting for it ("pending" or "retry"), one after another.
+
+    Documents already extracted, done or failed are left alone, so a retry only
+    redoes the documents that need it. Each document gets its own step record.
+    """
+    documents, steps = [], []
+    for document in state["documents"]:
+        if document["status"] in ("pending", "retry"):
+            document, step = extract_document(state, document)
+            steps.append(step)
+        documents.append(document)
+    return {"documents": documents, "steps": steps}
+
+
+# validate
 
 def check(name, passed, message=None):
     return {"name": name, "passed": passed, "message": message}
@@ -179,66 +237,78 @@ def schema_check(extraction, output_schema):
     return check("matches_schema", False, "; ".join(shown))
 
 
-def validate(state: OrchyState) -> dict:
-    """Deterministic checks on the extraction. Client-neutral: no client's rules in code.
-
-    First the client's output schema, then the client's rules (state["rules"],
-    from its configuration), run by the generic rule engine in rules/. Each
-    check's passed is True, False, or None when a rule was skipped because a
-    value it needs is missing.
-
-    Only a schema failure is retried (another extract) while attempts are left;
-    after the last attempt the event completes anyway, with the failed check
-    recorded, so Justice and the verdict flag it as needs_review. Rules never
-    cause a retry: they run on whatever was extracted, and their failures are
-    information for Justice.
-    """
+def validate_document(state, document):
+    """Checks one extracted document. Returns (updated document, step record)."""
     started_at = now()
-    extraction = state.get("extraction")
-
-    if extraction is None:
-        checks = [check("matches_schema", False, "There's no extraction to check.")]
-    else:
-        checks = [
-            schema_check(extraction, state["output_schema"]),
-            *run_rules(state.get("rules", []), extraction),
-        ]
-
-    schema_passed = checks[0]["passed"]
-    attempts_left = state.get("attempts", 0) < state.get("max_attempts", DEFAULT_MAX_ATTEMPTS)
-    retry = not schema_passed and attempts_left
+    checks = [
+        schema_check(document["extraction"], state["output_schema"]),
+        *run_rules(state.get("rules", []), document["extraction"]),
+    ]
+    retry = not checks[0]["passed"] and document["attempts"] < max_attempts(state)
     failed = [c["name"] for c in checks if c["passed"] is False]
     skipped = sum(1 for c in checks if c["passed"] is None)
 
-    update = {
-        "checks": checks,
-        "steps": [step_record(
-            "validate", started_at, "retry" if retry else "ok",
-            "Failed: " + ", ".join(failed) if failed else None,
-            checks_passed=len(checks) - len(failed) - skipped,
-            checks_failed=len(failed), checks_skipped=skipped,
-        )],
-    }
-    if not retry:
-        update["status"] = "completed"
-    return update
+    updated = {**document, "checks": checks, "status": "retry" if retry else "done"}
+    step = step_record(
+        "validate", started_at, "retry" if retry else "ok",
+        "Failed: " + ", ".join(failed) if failed else None,
+        document=document["index"],
+        checks_passed=len(checks) - len(failed) - skipped,
+        checks_failed=len(failed), checks_skipped=skipped,
+    )
+    return updated, step
 
 
-def fail(state: OrchyState) -> dict:
-    """Marks the event failed. Every failure route ends here, so it's recorded one way.
+def validate(state: OrchyState) -> dict:
+    """Deterministic checks on each extracted document. Client-neutral: no client's rules in code.
 
-    The node that hit the problem has already set error_code, error_kind and
-    error_message; this only makes sure a code is always present (e.g. when
-    transient errors ran out of attempts) and adds the final step.
+    First the client's output schema, then the client's rules (state["rules"],
+    from its configuration), run by the generic rule engine in rules/.
+
+    Only a schema failure is retried (the document goes back to extract) while
+    it has attempts left; after its last attempt it's done anyway, with the
+    failed check recorded, so Justice and the verdict flag it as needs_review.
+    Rules never cause a retry: their failures are information for Justice.
+    """
+    documents, steps = [], []
+    for document in state["documents"]:
+        if document["status"] == "extracted":
+            document, step = validate_document(state, document)
+            steps.append(step)
+        documents.append(document)
+    return {"documents": documents, "steps": steps}
+
+
+# finish
+
+def finish(state: OrchyState) -> dict:
+    """Decides the event's outcome from all its documents. Every run ends here.
+
+    completed: at least one document is done (others may have failed: each
+    document records its own error). failed: nothing usable came back. A
+    failure found by load_inputs (no usable attachments) keeps its own error.
     """
     started_at = now()
-    error_code = state.get("error_code") or "processing_error"
-    message = state.get("error_message") or "Processing failed."
-    if state.get("error_kind") == "transient":
-        message = f"Gave up after {state.get('attempts', 0)} attempts. Last error: {message}"
+    documents = state.get("documents", [])
+    done = sum(1 for d in documents if d["status"] == "done")
+    failed = [d for d in documents if d["status"] == "failed"]
+    counts = {"documents_done": done, "documents_failed": len(failed)}
+
+    if done:
+        return {"status": "completed",
+                "steps": [step_record("finish", started_at, "ok", **counts)]}
+
+    error_code = state.get("error_code")
+    message = state.get("error_message")
+    if not error_code:
+        codes = {d["error_code"] for d in failed}
+        error_code = codes.pop() if len(codes) == 1 else "processing_error"
+        message = "; ".join(f"{d['name']}: {d['error_message']}" for d in failed) or \
+            "No document could be processed."
     return {
         "status": "failed",
         "error_code": error_code,
         "error_message": message,
-        "steps": [step_record("fail", started_at, "failed", message, error_code=error_code)],
+        "steps": [step_record("finish", started_at, "failed", message,
+                              error_code=error_code, **counts)],
     }

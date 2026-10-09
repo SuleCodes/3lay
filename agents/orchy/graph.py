@@ -1,22 +1,22 @@
 """Orchy's graph: wires the nodes together and decides where each event goes next.
 
-    START -> load_inputs --+--> extract --+--> validate --+--> END
+    START -> load_inputs --+--> extract --+--> validate --+--> finish --> END
                            |       ^      |       |       |
-                           |       +------+       |       +--> extract  (schema failed,
-                           |  transient error,    |                      attempts left)
-                           |  attempts left       |
-                           v                      v
-                          fail <------------------+  permanent error, or out of attempts
-                           |
-                           +--> END
+                           |       +------+       |       +--> extract
+                           |    a document to     |   a document's schema check failed,
+                           |    retry (transient  |   attempts left
+                           |    error)            |
+                           +--> finish            +--> finish  nothing left to validate
+             no usable attachments
 
-Nodes do the work and report what happened; the routing functions below are
-the only place decisions are made (retry, carry on, or fail). They're plain
-code, not a model: this is Obed's fixed-recipe mode.
+An event is one email with one or more documents, processed one after another.
+Nodes do the work and record each document's status ("pending", "retry",
+"extracted", "done", "failed"); the routing functions below read those
+statuses and are the only place the flow is decided. They're plain code, not
+a model: this is Obed's fixed-recipe mode.
 
-A run ends at END either from validate (status "completed") or from fail
-(status "failed"). How it ended is in the final state's status, not in which
-route it took; the route is in steps.
+Every run ends at finish, which sets the event's status from all its
+documents: "completed" if any document is done, "failed" if none is.
 """
 
 from langgraph.graph import END, START, StateGraph
@@ -25,31 +25,27 @@ from orchy import nodes
 from orchy.state import OrchyState
 
 
-def attempts_left(state):
-    return state.get("attempts", 0) < state.get("max_attempts", nodes.DEFAULT_MAX_ATTEMPTS)
+def any_document(state, status):
+    return any(d["status"] == status for d in state.get("documents", []))
 
 
 def route_after_load_inputs(state):
-    """A document that won't open fails straight away; anything else gets extracted."""
-    return "fail" if state.get("status") == "failed" else "extract"
+    """No usable attachments: straight to finish. Otherwise extract them."""
+    return "finish" if state.get("status") == "failed" else "extract"
 
 
 def route_after_extract(state):
-    """Carry on if extract worked; retry a transient error while attempts are left; else fail."""
-    if state.get("error_kind") is None:
-        return "validate"
-    if state["error_kind"] == "transient" and attempts_left(state):
+    """Retry first (only the documents that need it), then validate what was extracted."""
+    if any_document(state, "retry"):
         return "extract"
-    return "fail"  # a permanent error, or transient errors with no attempts left
+    if any_document(state, "extracted"):
+        return "validate"
+    return "finish"  # every document failed
 
 
 def route_after_validate(state):
-    """validate's step says "retry" when the schema check failed and attempts are left.
-
-    Otherwise validate has already set status "completed" (with any failed
-    checks recorded for Justice), so the run is finished.
-    """
-    return "extract" if state["steps"][-1]["outcome"] == "retry" else END
+    """A document whose schema check failed with attempts left goes back to extract."""
+    return "extract" if any_document(state, "retry") else "finish"
 
 
 def build_graph():
@@ -59,13 +55,15 @@ def build_graph():
     builder.add_node("load_inputs", nodes.load_inputs)
     builder.add_node("extract", nodes.extract)
     builder.add_node("validate", nodes.validate)
-    builder.add_node("fail", nodes.fail)
+    builder.add_node("finish", nodes.finish)
 
     builder.add_edge(START, "load_inputs")
-
-    builder.add_conditional_edges("load_inputs", route_after_load_inputs, ["extract", "fail"])
-    builder.add_conditional_edges("extract", route_after_extract, ["validate", "extract", "fail"])
-    builder.add_conditional_edges("validate", route_after_validate, ["extract", END])
-    builder.add_edge("fail", END)
+    # The list after each routing function names every place it can send the
+    # event: LangGraph checks them when compiling and uses them to draw the graph.
+    builder.add_conditional_edges("load_inputs", route_after_load_inputs, ["extract", "finish"])
+    builder.add_conditional_edges("extract", route_after_extract,
+                                  ["extract", "validate", "finish"])
+    builder.add_conditional_edges("validate", route_after_validate, ["extract", "finish"])
+    builder.add_edge("finish", END)
 
     return builder.compile()
