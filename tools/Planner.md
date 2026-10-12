@@ -420,6 +420,32 @@ Decisions:
   secret is keyed by that ID, outside the configuration, so approving a new
   version doesn't change the secret and rotating it doesn't need a new version.
 
+**E4 decisions** (agreed 2026-10-09):
+- **The pipeline reads the database directly,** with its own limited role
+  (`agents_pipeline`: read usernames, configurations and secrets; E5 adds
+  writing event records), rather than through a backend API, so processing
+  never waits for the backend's cold start. Code: `agents/store/`.
+- **The agents' settings come from App Configuration** (`AGENTS:` keys, prefix
+  trimmed), like the backend's and the function's; a real environment
+  variable, then `agents/.env`, override them locally (`agents/settings.py`).
+  The pipeline's database URL is `AGENTS:DATABASE_URL`, a different value from
+  `BACKEND:DATABASE_URL`, because it connects as the limited `agents_pipeline`
+  role.
+- **The encryption key is a Key Vault secret,** referenced from App
+  Configuration as `AGENTS:SECRETS_ENCRYPTION_KEY` (and later
+  `BACKEND:SECRETS_ENCRYPTION_KEY`, pointing at the same secret). AES-256-GCM,
+  with the key version and the destination ID bound into each stored secret.
+- **Configurations are saved by a script** (`agents/scripts/save_configuration.py`),
+  which runs the same configuration check the dashboard and Boardy will use.
+  It lives in `agents/` rather than the backend because the checks (rules,
+  destinations) are agents code; the backend will import the agents package
+  when it hosts Boardy. It writes with the backend's connection, read from
+  `BACKEND:DATABASE_URL`.
+- **For now a saved version is activated directly** (`draft` → `active`);
+  approval comes with the dashboard and Boardy.
+- **Data lives in Supabase eu-west-1 (Ireland),** which suits UK GDPR and an
+  EU data residency option.
+
 Tables this implies (E4/E5): `client_configurations` (one row per version,
 destinations inside), `destination_secrets`, `events`, `event_steps`,
 `deliveries` (one row per attempt, by destination ID). `events` stores the

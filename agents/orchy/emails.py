@@ -106,6 +106,20 @@ def read_sender(email_path):
     return sender.addresses[0].addr_spec.lower() or None
 
 
+def read_recipient(email_path):
+    """The first To address, lower-cased: the client's forwarding address.
+
+    For local runs. In the pipeline the client comes from the queue message,
+    which the Worker filled from the address the email was actually routed for.
+    """
+    with open(email_path, "rb") as file:
+        message = BytesParser(policy=policy.default).parse(file, headersonly=True)
+    to = message["To"]
+    if to is None or not to.addresses:
+        return None
+    return to.addresses[0].addr_spec.lower() or None
+
+
 def read_attachment(email_path, index):
     """One attachment's bytes. The email is read again rather than kept in the state."""
     return read_attachments(email_path)[index]

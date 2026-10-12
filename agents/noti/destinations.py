@@ -83,9 +83,19 @@ def secret_variable(destination_id):
 
 
 def destination_secret(destination_id):
-    """The destination's signing secret, or None if it hasn't been set.
+    """The secret(s) to sign a destination's deliveries with, or None if there are none.
 
-    For now from the environment (agents/.env); later decrypted from the
-    destination_secrets table. Never logged or stored with a delivery.
+    A secret set in the environment (NOTI_SECRET_<ID> in agents/.env) wins, as
+    local settings do elsewhere; otherwise it's decrypted from the database
+    (the current secret, plus the previous one during a rotation). Never logged
+    or stored with a delivery.
     """
-    return os.environ.get(secret_variable(destination_id)) or None
+    local = os.environ.get(secret_variable(destination_id))
+    if local:
+        return local
+    # Imported here so noti doesn't need the database when secrets are local.
+    from store.db import database_configured, engine  # pylint: disable=import-outside-toplevel
+    from store.secrets import signing_secrets  # pylint: disable=import-outside-toplevel
+    if not database_configured():
+        return None
+    return signing_secrets(engine(), destination_id) or None

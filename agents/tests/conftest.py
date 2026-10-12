@@ -1,7 +1,8 @@
 """Shared test helpers. pytest loads this file automatically before the tests.
 
-Tests never call a real model or send traces: the model call is faked, and
-LangSmith tracing is switched off here even if agents/.env turns it on.
+Tests never call a real model, send traces or touch the real database: the
+model call is faked, and LangSmith tracing and the database URLs are switched
+off here even if agents/.env (which VS Code loads for tests) sets them.
 """
 
 import os
@@ -15,6 +16,8 @@ import pytest
 from orchy import nodes
 
 os.environ["LANGSMITH_TRACING"] = "false"
+for _name in ("DATABASE_URL", "ADMIN_DATABASE_URL", "APP_CONFIG_CONNECTION_STRING"):
+    os.environ.pop(_name, None)
 
 USAGE = {"input_tokens": 3000, "output_tokens": 1000, "total_tokens": 4000}
 

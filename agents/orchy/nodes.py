@@ -17,7 +17,6 @@ from pathlib import Path
 import httpx
 import jsonschema
 import openai
-from dotenv import load_dotenv
 
 from noti.delivery import deliver as deliver_to
 from noti.destinations import destination_secret
@@ -27,6 +26,7 @@ from orchy.emails import read_attachment, read_attachments, read_sender
 from orchy.envelope import build_envelope as envelope_for
 from orchy.state import DocumentState, OrchyState
 from rules import run_rules
+from settings import load_settings
 
 AGENTS_DIR = Path(__file__).resolve().parent.parent
 
@@ -151,11 +151,11 @@ def load_inputs(state: OrchyState) -> dict:
 
 @cache
 def obed_model():
-    """Obed's model and its name, from agents/.env. Created once, then reused.
+    """Obed's model and its name, from the settings. Created once, then reused.
 
     The model is a live client, not data, so it never goes in the state.
     """
-    load_dotenv(AGENTS_DIR / ".env")
+    load_settings()  # agents/.env, then App Configuration (AGENTS:OBED_MODEL, ...)
     name = os.environ["OBED_MODEL"]
     return create_model(name, os.environ["OBED_BASE_URL"], os.environ["HF_TOKEN"]), name
 

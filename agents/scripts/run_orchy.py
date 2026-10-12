@@ -2,14 +2,23 @@
 
     python scripts/run_orchy.py                      the first .eml in tmp/fixtures/
     python scripts/run_orchy.py tmp/fixtures/x.eml   a specific email
+    python scripts/run_orchy.py x.eml --client rolepay-agent
 
 The email is a raw .eml, like the ones the ingest Function stores; make one
 from PDFs or photos with scripts/make_email.py.
 
-Settings come from agents/.env: OBED_MODEL, OBED_BASE_URL, HF_TOKEN (read by
-the extract node), and LANGSMITH_* if you want tracing.
+The client's configuration comes from the database when DATABASE_URL
+(App Configuration: AGENTS:DATABASE_URL) is set: the client is the email's To
+address (rolepay-agent@in.3lay.live -> rolepay-agent), or --client. Without
+a database it falls back to the local files in tmp/ (schema, rules,
+destinations.json), for working offline.
+
+Settings come from App Configuration's AGENTS:* keys, with agents/.env
+overriding them locally (see settings.py): OBED_MODEL, OBED_BASE_URL, HF_TOKEN,
+DATABASE_URL, SECRETS_ENCRYPTION_KEY, and LANGSMITH_* for tracing.
 """
 
+import argparse
 import json
 import os
 import sys
@@ -18,15 +27,17 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from dotenv import load_dotenv
-
 AGENTS_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(AGENTS_DIR))  # so the packages import when run as a script
 
 # pylint: disable=wrong-import-position
 from noti.destinations import check_destinations  # noqa: E402
+from orchy.emails import read_recipient  # noqa: E402
 from orchy.graph import build_graph  # noqa: E402
 from rules import check_rule_definitions  # noqa: E402
+from settings import load_settings  # noqa: E402
+from store.configurations import load_active_configuration, run_settings  # noqa: E402
+from store.db import database_configured, engine  # noqa: E402
 
 FIXTURES_DIR = AGENTS_DIR / "tmp" / "fixtures"
 SCHEMA_PATH = AGENTS_DIR / "tmp" / "schema" / "rolepay-income-statement.v1.json"
@@ -38,8 +49,8 @@ RULES_PATH = AGENTS_DIR / "tmp" / "rules" / "rolepay-income-statement.v1.json"
 DESTINATIONS_PATH = AGENTS_DIR / "tmp" / "destinations.json"
 RUNS_DIR = AGENTS_DIR / "tmp" / "runs"
 
-# The client's configuration. Later this comes from the database.
-CONFIG_VERSION = 1
+# Offline fallback for the configuration, when there's no database.
+CONFIG_VERSION = 0
 DOCUMENT_TYPE = "income_statement"
 INSTRUCTIONS = "Extract the document into the output schema."
 MAX_ATTEMPTS = 3
@@ -47,9 +58,9 @@ MAX_ATTEMPTS = 3
 CHECK_LABELS = {True: "pass", False: "FAIL", None: "skip"}
 
 
-def email_to_run():
-    if len(sys.argv) > 1:
-        return Path(sys.argv[1]).resolve()
+def email_to_run(path):
+    if path:
+        return Path(path).resolve()
     emails = sorted(FIXTURES_DIR.glob("*.eml"))
     if not emails:
         sys.exit(f"No .eml in {FIXTURES_DIR}. Make one with: "
@@ -72,6 +83,33 @@ def load_destinations():
               "Add one with scripts/add_destination.py <url>.")
         return []
     return check_destinations(json.loads(DESTINATIONS_PATH.read_text(encoding="utf-8")))
+
+
+def settings_from_files():
+    """The configuration from the local tmp/ files (working offline)."""
+    print("No DATABASE_URL: using the configuration in tmp/ files.")
+    return {
+        "config_version": CONFIG_VERSION,
+        "document_type": DOCUMENT_TYPE,
+        "instructions": INSTRUCTIONS,
+        "output_schema": json.loads(SCHEMA_PATH.read_text(encoding="utf-8")),
+        "schema_name": SCHEMA_NAME,
+        "rules": load_rules(),
+        "destinations": load_destinations(),
+        "max_attempts": MAX_ATTEMPTS,
+    }
+
+
+def settings_from_database(email_path, client):
+    """The client's active configuration, the client being --client or the email's To address."""
+    if not client:
+        recipient = read_recipient(email_path)
+        if not recipient:
+            sys.exit("The email has no To address: pass --client <username>.")
+        client = recipient.split("@", 1)[0]
+    config, version, _ = load_active_configuration(engine(), client)
+    print(f"Client {client}: configuration version {version} from the database.")
+    return run_settings(config, version)
 
 
 def total_usage(steps):
@@ -145,22 +183,22 @@ def print_summary(final_state):
 
 
 def main():
-    load_dotenv(AGENTS_DIR / ".env")
-    email_path = email_to_run()
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("email", nargs="?", help="a .eml file (default: the first in tmp/fixtures)")
+    parser.add_argument("--client", help="the client's username (default: from the To address)")
+    args = parser.parse_args()
+
+    load_settings()
+    email_path = email_to_run(args.email)
+    settings = (settings_from_database(email_path, args.client) if database_configured()
+                else settings_from_files())
 
     initial_state = {
         "event_id": str(uuid.uuid4()),
         "run": 1,
         "received_at": datetime.now(timezone.utc).isoformat(timespec="milliseconds"),
         "email_path": str(email_path),
-        "config_version": CONFIG_VERSION,
-        "document_type": DOCUMENT_TYPE,
-        "instructions": INSTRUCTIONS,
-        "output_schema": json.loads(SCHEMA_PATH.read_text(encoding="utf-8")),
-        "schema_name": SCHEMA_NAME,
-        "rules": load_rules(),
-        "destinations": load_destinations(),
-        "max_attempts": MAX_ATTEMPTS,
+        **settings,
         "steps": [],
     }
 

@@ -1,7 +1,8 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, ForeignKey, String
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.config import get_settings
@@ -83,3 +84,61 @@ class MagicLinkToken(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class ClientConfiguration(Base):
+    """One version of a client's configuration: what the agents do with its events.
+
+    Holds the document types (each with its schema, instructions and rules),
+    analyses and destinations, as JSON checked by the agents' configuration
+    check (agents/store/configurations.py) when it's saved. Versions are never
+    edited: a change is a new version. Exactly one version per client is
+    active (enforced by the partial unique index below), and every event
+    records the version it ran under. Secrets are never in here: see
+    DestinationSecret.
+    """
+
+    __tablename__ = "client_configurations"
+    __table_args__ = (
+        Index("uq_client_configurations_user_version", "user_id", "version", unique=True),
+        Index("uq_client_configurations_one_active", "user_id", unique=True,
+              postgresql_where=text("status = 'active'")),
+    )
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    # Deleting a client deletes its configurations (and, below, its secrets).
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"),
+                                         nullable=False, index=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    # "draft", "active" or "retired" ("approved" comes with the dashboard and Boardy).
+    status: Mapped[str] = mapped_column(String, nullable=False, default="draft")
+    config: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    activated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class DestinationSecret(Base):
+    """A destination's webhook signing secret, encrypted.
+
+    Keyed by the destination's stable ID from the configuration, so approving a
+    new configuration version doesn't change the secret. Stored encrypted
+    (AES-256-GCM, agents/store/secret_box.py) with 3lay's key from Key Vault,
+    never hashed: 3lay needs the actual secret to sign every delivery. During a
+    rotation the previous secret is kept until previous_expires_at, and both
+    signatures are sent.
+    """
+
+    __tablename__ = "destination_secrets"
+
+    destination_id: Mapped[str] = mapped_column(String, primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"),
+                                         nullable=False, index=True)
+    ciphertext: Mapped[str] = mapped_column(String, nullable=False)
+    previous_ciphertext: Mapped[str | None] = mapped_column(String, nullable=True)
+    previous_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True),
+                                                                 nullable=True)
+    # Short, non-secret start of the secret (e.g. "whsec_MfKQ"), shown in the
+    # dashboard so it can be recognised, like API key prefixes.
+    prefix: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    rotated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
