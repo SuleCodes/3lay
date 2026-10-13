@@ -526,6 +526,72 @@ a resend after a URL change shows the new URL. Never stored there: the secret
 or the signature. URLs may carry a token in the query string, so the dashboard
 and logs show only the part before `?`.
 
+### Boardy (design agreed 2026-10-13)
+
+Stages, each ending with something runnable:
+
+| # | Stage | Teaches |
+|---|---|---|
+| B1 | Design (this section) | Designing an agent: goal, tools, limits |
+| B2 | The agent loop in the terminal: a model node that chooses, a tool node that acts, looping. **Done 2026-10-13** (`agents/boardy/`, `scripts/talk_to_boardy.py`) | How an agent differs from Orchy's fixed routing; a reducer for tools called together |
+| B3 | Human in the loop (`interrupt`) and memory (a checkpointer: quit and resume) | Pausing inside a tool; threads |
+| B4 | Trying the draft on the client's samples (Obed + rules); their corrections become their gold standard | Agents using agents; evaluation built into onboarding |
+| B5 | Submitting a draft and approval (`draft → approved → active`); secrets created at activation | The agent proposes, people decide |
+| B6 | Testing Boardy: a scripted Rolepay "client"; does Boardy rebuild the hand-written configuration? | Evaluating an agent's behaviour |
+| B7 | Backend endpoints, frontend chat, streaming, Postgres checkpointer | Deploying a conversational agent |
+
+**Version 1's job:** onboard a client who wants documents emailed in,
+extracted into one document type, checked by rules and delivered by webhook,
+i.e. what the pipeline supports today. A **capability sheet** in Boardy's
+instructions says what 3lay can and can't do; requests beyond it (cases,
+analyses, SMS, several document types) are noted for later, never promised.
+
+**What it finds out:** the business and use case; the document type (name,
+description, reading instructions); the fields (the schema); the checks (the
+rules); where results go (webhook URL, events); retry limits; sample documents
+and their correct values (B4).
+
+**How it works:** the model decides each turn whether to reply to the client
+(a question or an explanation: the graph then waits for the next message) or
+to call a tool. `interrupt` is only for pausing inside a tool, e.g. confirming
+before submitting.
+
+**Tools.** Each changes one piece of the draft (kept in the conversation's
+state) and checks it straight away with existing code, returning the problems
+for the model to fix:
+
+| Tool | Checked by |
+|---|---|
+| `set_document_type(name, description, instructions)` | the configuration's shape check |
+| `set_schema(schema)` | a valid JSON Schema, plus 3lay's schema conventions |
+| `add_rule(rule)`, `remove_rule(id)` | `check_rule_definitions`, plus every path exists in the schema |
+| `set_destination(url, events)` | `check_destinations`, plus no internal or private addresses |
+| `set_processing(max_attempts)` | 3lay's limits |
+| `read_sample(file)` | reads a sample with the same model as Obed (`AGENTS:OBED_MODEL`), so documents are read the way the pipeline reads them |
+| `show_draft()` | `check_configuration`; also lists what's still missing |
+| `try_on_samples()` (B4) | |
+| `submit_draft()` (B5) | `check_configuration`, after an `interrupt` to confirm |
+
+No tools for secrets or activation: secrets are generated when the client
+approves, and only the client can approve.
+
+**3lay's schema conventions** (checked in code, from building Rolepay's schema
+by hand): every field has a description (it's Obed's instruction); every field
+is listed as required, with `null` for "not on the document"; money is a
+number; dates are copied as printed; never personal identifiers or payment
+details (bank account numbers, National Insurance numbers, passwords).
+
+**Decisions:**
+- **Boardy's brain is `openai/gpt-oss-120b:deepinfra`** (cheap, strong at
+  tool calling; set in `AGENTS:BOARDY_MODEL`). It doesn't read images:
+  reading sample documents is a tool using Obed's model, because future tasks
+  will need to read the source the same way the pipeline does.
+- **The draft lives in the conversation's state** until `submit_draft` saves
+  it as a `draft` row in `client_configurations`.
+- **Boardy only offers what's on the capability sheet.**
+- **The terminal version (B2–B4) starts from a blank draft** for a given
+  client username. Editing an existing configuration comes later.
+
 ## Design on paper
 
 The three things defined before writing agent code. All agreed.

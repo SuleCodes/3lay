@@ -1,5 +1,5 @@
 {
-  "savedAt": "2026-10-13T14:24:05.109+00:00",
+  "savedAt": "2026-10-13T16:19:02.075+00:00",
   "notes": [
     {
       "id": "0510113e-9eaf-42de-990e-c3ddf80b9fef",
@@ -370,6 +370,16 @@
       "date": "2026-10-13",
       "done": false,
       "createdAt": "2026-10-13T14:24:05.109+00:00"
+    },
+    {
+      "id": "37147a8d-6524-4abc-b493-192e8ba706de",
+      "title": "Model fallbacks across providers",
+      "type": "feature",
+      "priority": "high",
+      "date": "2026-10-13",
+      "done": false,
+      "createdAt": "2026-10-13T16:19:02.075+00:00",
+      "description": "Before a real client relies on the pipeline. Each agent pins one provider (Obed: gemma-4-31B-it:novita; Boardy: gpt-oss-120b:ovhcloud), so a provider outage stops it: on 2026-10-13 Hugging Face's circuit breaker paused DeepInfra for gpt-oss-120b. Make each model setting a fallback list (e.g. ovhcloud, then scaleway, then together) using LangChain's with_fallbacks, containing only providers that support what the agent needs (tools for Boardy, structured output for Obed; check with scripts/list_models.py --check). Record which provider served each call in the step details."
     }
   ]
 }
