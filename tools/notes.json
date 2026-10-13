@@ -1,5 +1,5 @@
 {
-  "savedAt": "2026-10-13T16:19:02.075+00:00",
+  "savedAt": "2026-10-13T20:16:49.061+00:00",
   "notes": [
     {
       "id": "0510113e-9eaf-42de-990e-c3ddf80b9fef",
@@ -24,7 +24,7 @@
     {
       "id": "8cecb62d-8b51-4d10-b00c-eaf835ef5c4d",
       "title": "Design: event lifecycle",
-      "description": "Event states and allowed moves (e.g. received \u2192 processing \u2192 extracted \u2192 judged \u2192 delivered), failure points, failed vs needs_review, delivery retries, what each step records for the timeline. See Planner.md, 'Design on paper'.",
+      "description": "Event states and allowed moves (e.g. received → processing → extracted → judged → delivered), failure points, failed vs needs_review, delivery retries, what each step records for the timeline. See Planner.md, 'Design on paper'.",
       "type": "feature",
       "priority": "high",
       "date": "2026-10-05",
@@ -44,7 +44,7 @@
     {
       "id": "c2dc568b-80e0-41da-81c3-8126f98cf4a6",
       "title": "Reject emails until client onboarding is complete",
-      "description": "Add a client status (onboarding \u2192 active \u2192 suspended). The Worker's recipient check rejects clients that aren't active, with a bounce message giving the reason, before any Function call, storage or LLM cost.",
+      "description": "Add a client status (onboarding → active → suspended). The Worker's recipient check rejects clients that aren't active, with a bounce message giving the reason, before any Function call, storage or LLM cost.",
       "type": "feature",
       "priority": "high",
       "date": "2026-10-05",
@@ -64,7 +64,7 @@
     {
       "id": "35e44072-3d01-4f83-9278-44ad1ff2cb6d",
       "title": "Obed: payslip extraction with structured output",
-      "description": "Roadmap step 1. A plain script, no framework: one payslip \u2192 JSON validated against a Pydantic model. Compare OCR vs a model that can read images. Email content is untrusted; Obed gets no outbound tools.",
+      "description": "Roadmap step 1. A plain script, no framework: one payslip → JSON validated against a Pydantic model. Compare OCR vs a model that can read images. Email content is untrusted; Obed gets no outbound tools.",
       "type": "feature",
       "priority": "high",
       "date": "2026-10-05",
@@ -84,7 +84,7 @@
     {
       "id": "1b8dde1f-9500-4a43-b1f5-a73388886d82",
       "title": "Deterministic checks before Justice",
-      "description": "Plain-code validation: matches the schema; business rules (gross \u2212 deductions = net, plausible tax, valid dates). Free, instant, no hallucination.",
+      "description": "Plain-code validation: matches the schema; business rules (gross − deductions = net, plausible tax, valid dates). Free, instant, no hallucination.",
       "type": "feature",
       "priority": "high",
       "date": "2026-10-05",
@@ -124,7 +124,7 @@
     {
       "id": "77c69865-f3d5-4554-bea7-7096e1d25a99",
       "title": "Evaluation test set and tracing",
-      "description": "Tracing works (LangSmith, synthetic documents only; switched off in tests). Left: a test set of 10\u201320 documents with hand-checked gold standards (scripts/make_gold.py, evaluate.py). Plan: Boardy's onboarding produces each client's test set from their sample documents.",
+      "description": "Tracing works (LangSmith, synthetic documents only; switched off in tests). Left: a test set of 10–20 documents with hand-checked gold standards (scripts/make_gold.py, evaluate.py). Plan: Boardy's onboarding produces each client's test set from their sample documents.",
       "type": "feature",
       "priority": "high",
       "date": "2026-10-05",
@@ -264,7 +264,7 @@
     {
       "id": "d0cc1837-b890-4f86-879a-85d8329c5b87",
       "title": "Configuration versions and approval",
-      "description": "Done (E4): client_configurations with versions, one active per client, check_configuration, events record their config_version; secrets outside the configuration. Left: the draft \u2192 approved \u2192 active approval step (comes with Boardy and the dashboard).",
+      "description": "Done (E4): client_configurations with versions, one active per client, check_configuration, events record their config_version; secrets outside the configuration. Left: the draft → approved → active approval step (comes with Boardy and the dashboard).",
       "type": "feature",
       "priority": "high",
       "date": "2026-10-05",
@@ -284,7 +284,7 @@
     {
       "id": "0e749cbc-1772-49da-8003-5d4173adb6f5",
       "title": "Orchy: classify attachments into document types",
-      "description": "Orchy's one LLM step: each attachment \u2192 one of the client's document types (by its description), or unknown \u2192 rejected item (not_a_relevant_document). Then fan out one branch per document (LangGraph fan-out / fan-in).",
+      "description": "Orchy's one LLM step: each attachment → one of the client's document types (by its description), or unknown → rejected item (not_a_relevant_document). Then fan out one branch per document (LangGraph fan-out / fan-in).",
       "type": "feature",
       "priority": "high",
       "date": "2026-10-05",
@@ -379,7 +379,27 @@
       "date": "2026-10-13",
       "done": false,
       "createdAt": "2026-10-13T16:19:02.075+00:00",
-      "description": "Before a real client relies on the pipeline. Each agent pins one provider (Obed: gemma-4-31B-it:novita; Boardy: gpt-oss-120b:ovhcloud), so a provider outage stops it: on 2026-10-13 Hugging Face's circuit breaker paused DeepInfra for gpt-oss-120b. Make each model setting a fallback list (e.g. ovhcloud, then scaleway, then together) using LangChain's with_fallbacks, containing only providers that support what the agent needs (tools for Boardy, structured output for Obed; check with scripts/list_models.py --check). Record which provider served each call in the step details."
+      "description": "Before a real client relies on the pipeline. Each agent pins one provider (Obed: gemma-4-31B-it:novita; Boardy: gpt-oss-120b:groq), so a provider outage stops it: on 2026-10-13 Hugging Face's circuit breaker paused DeepInfra for gpt-oss-120b. Make each model setting a fallback list (e.g. ovhcloud, then scaleway, then together) using LangChain's with_fallbacks, containing only providers that support what the agent needs (tools for Boardy, structured output for Obed; check with scripts/list_models.py --check). Record which provider served each call in the step details. Also seen 2026-10-13: groq answers 400 tool_use_failed when the model writes invalid JSON for a tool call (a large set_schema); that's worth one retry, then the next provider."
+    },
+    {
+      "id": "f870bbfc-9f9a-4bf5-9810-ec4c51eb47ed",
+      "title": "Boardy: sample corrections become the client's gold standard",
+      "type": "feature",
+      "priority": "medium",
+      "date": "2026-10-13",
+      "done": false,
+      "createdAt": "2026-10-13T20:16:49.061+00:00",
+      "description": "Deferred from B4 (Seth, 2026-10-13). After try_on_samples, the client says which values are wrong (e.g. line 2's net should be 450); a record_correct_values(sample_id, corrections) tool stores the expected output per sample in the draft, saved with the configuration in B5. Those samples and values are the client's gold standard, used by B6 (evaluating Boardy) and Justice. Seen in the first real run: the payslip's PAYE and NI deductions sit in a separate section, so they were missed per line: exactly what a correction would catch."
+    },
+    {
+      "id": "d2e796be-9385-44d2-950d-8bde77652d92",
+      "title": "Boardy: cap tool rounds per turn",
+      "type": "task",
+      "priority": "medium",
+      "date": "2026-10-13",
+      "done": false,
+      "createdAt": "2026-10-13T20:16:49.061+00:00",
+      "description": "In a real run (2026-10-13) groq called set_schema 23 times in one turn because the $id error message didn't say underscores weren't allowed (fixed: underscores allowed, clearer message). Nothing stops a turn looping like that, and each round costs a model call. Cap the tool rounds per turn (count them in the state; past the limit, the tools node answers 'stop and ask the client' instead of running), rather than LangGraph's recursion_limit, which would stop mid-step and leave tool calls unanswered in the saved conversation."
     }
   ]
 }

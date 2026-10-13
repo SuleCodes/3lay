@@ -160,8 +160,18 @@ def obed_model():
     return create_model(name, os.environ["OBED_BASE_URL"], os.environ["HF_TOKEN"]), name
 
 
-def extract_document(state, document):
-    """Runs Obed on one document. Returns (updated document, step record)."""
+def attachment_inputs(state, document):
+    """The document's pages as image blocks, read from the event's email."""
+    attachment = read_attachment(state["email_path"], document["index"])
+    return to_image_blocks(attachment.data, attachment.content_type)
+
+
+def extract_document(state, document, read_inputs=attachment_inputs):
+    """Runs Obed on one document. Returns (updated document, step record).
+
+    read_inputs(state, document) gives the pages to read: from the email here;
+    Boardy passes its own to try a draft on a client's sample (boardy/tools.py).
+    """
     started_at = now()
     attempts = document["attempts"] + 1
     model, model_name = obed_model()
@@ -185,8 +195,7 @@ def extract_document(state, document):
                         "error_code": code, "error_kind": kind, "error_message": message}, usage)
 
     try:
-        attachment = read_attachment(state["email_path"], document["index"])
-        inputs = to_image_blocks(attachment.data, attachment.content_type)
+        inputs = read_inputs(state, document)
     except Exception as exc:  # pylint: disable=broad-exception-caught
         return error("permanent", "document_unreadable", f"Couldn't render the document: {exc}")
 

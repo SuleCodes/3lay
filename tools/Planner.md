@@ -534,8 +534,8 @@ Stages, each ending with something runnable:
 |---|---|---|
 | B1 | Design (this section) | Designing an agent: goal, tools, limits |
 | B2 | The agent loop in the terminal: a model node that chooses, a tool node that acts, looping. **Done 2026-10-13** (`agents/boardy/`, `scripts/talk_to_boardy.py`) | How an agent differs from Orchy's fixed routing; a reducer for tools called together |
-| B3 | Human in the loop (`interrupt`) and memory (a checkpointer: quit and resume) | Pausing inside a tool; threads |
-| B4 | Trying the draft on the client's samples (Obed + rules); their corrections become their gold standard | Agents using agents; evaluation built into onboarding |
+| B3 | Human in the loop (`interrupt`) and memory (a checkpointer). **Done 2026-10-13**: thread id is `<customer id>:<conversation id>` (users.id, never email or username: clients may sign up without email); `submit_draft` pauses for approval, any later change clears it; in-memory checkpointer in the terminal, Postgres in B7 | Pausing inside a tool; threads |
+| B4 | Trying the draft on the client's samples (Obed + rules). **Done 2026-10-13**: `read_sample` (Obed's model describes a sample) and `try_on_samples` (Orchy's own extract_document and validate_document, one attempt) take a sample id, never a path; samples from `--samples` (up to 5), up to 10 tries per conversation. Corrections becoming the client's gold standard: deferred (notes.json) | Agents using agents; evaluation built into onboarding |
 | B5 | Submitting a draft and approval (`draft → approved → active`); secrets created at activation | The agent proposes, people decide |
 | B6 | Testing Boardy: a scripted Rolepay "client"; does Boardy rebuild the hand-written configuration? | Evaluating an agent's behaviour |
 | B7 | Backend endpoints, frontend chat, streaming, Postgres checkpointer | Deploying a conversational agent |

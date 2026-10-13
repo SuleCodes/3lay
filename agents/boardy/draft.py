@@ -9,6 +9,9 @@ to this", "add this rule"), and merge_draft, the draft's reducer, applies the
 changes one after another. That's what lets the model call several tools at
 once: they run in parallel, and without the reducer each would return a whole
 draft built from the same old one, overwriting the others' changes.
+
+"approved" is set when the client approves the draft (submit_draft), and any
+other change clears it: the client approves exactly what they were shown.
 """
 
 from store.configurations import DEFAULT_MAX_ATTEMPTS
@@ -16,6 +19,7 @@ from store.configurations import DEFAULT_MAX_ATTEMPTS
 # Changes a tool can return, besides replacing one of the draft's own pieces.
 ADD_RULE = "add_rule"        # value: a rule; replaces any rule with the same id
 REMOVE_RULE = "remove_rule"  # value: a rule id
+APPROVED = "approved"        # value: True once the client approves this draft
 
 
 def merge_draft(current, change):
@@ -28,6 +32,8 @@ def merge_draft(current, change):
             draft["rules"] = [r for r in draft.get("rules", []) if r["id"] != value]
         else:
             draft[key] = value
+        if key != APPROVED:
+            draft[APPROVED] = False
     return draft
 
 
@@ -38,6 +44,7 @@ def empty_draft():
         "rules": [],
         "destinations": [],
         "processing": {"max_attempts": DEFAULT_MAX_ATTEMPTS},
+        APPROVED: False,
     }
 
 

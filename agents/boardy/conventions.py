@@ -19,7 +19,7 @@ import re
 
 import jsonschema
 
-ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]*/[0-9]+$")
+ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]*/[0-9]+$")
 
 # Field names that hold money, so must be numbers. Matched against the name's
 # last word, so total_net and year_to_date_tax count but tax_code doesn't.
@@ -91,7 +91,9 @@ def check_schema_conventions(schema):
         return [f"Not a valid JSON Schema: {exc.message}"]
     problems = []
     if not ID_PATTERN.match(str(schema.get("$id", ""))):
-        problems.append('$id must be "<name>/<version>", e.g. "acme-invoice/1"')
+        problems.append(f'$id is {schema.get("$id")!r}; it must be "<name>/<version>": the name '
+                        'in lower-case letters, digits, "-" and "_", then "/" and a whole '
+                        'number, e.g. "acme-invoice/1"')
     if schema.get("type") != "object":
         problems.append('the schema\'s type must be "object" (one document)')
     check_object("", schema, problems)
