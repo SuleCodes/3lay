@@ -61,6 +61,7 @@ class BoardyState(MessagesState):
     samples: list[dict[str, Any]]  # the client's sample documents (boardy/samples.py)
     sample_notes: Annotated[dict[str, str], merge_notes]  # read_sample's description, by id
     sample_tries: Annotated[int, operator.add]  # try_on_samples runs so far
+    saved_version: int  # the draft version saved when the client approved
 
 
 @cache

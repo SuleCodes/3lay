@@ -15,8 +15,9 @@ from sqlalchemy.exc import IntegrityError
 from conftest import ENCRYPTION_KEY
 from noti import destinations as noti_destinations
 from store import db
-from store.configurations import (ConfigurationNotFound, check_configuration,
-                                  load_active_configuration, run_settings, save_configuration)
+from store.configurations import (ConfigurationNotFound, activate_configuration,
+                                  check_configuration, latest_draft, load_active_configuration,
+                                  run_settings, save_configuration, save_draft)
 from store.db import client_configurations, destination_secrets
 from store.secret_box import SecretBoxError, decrypt, encrypt, generate_key
 from store.secrets import create_or_rotate_secret, has_secret, signing_secrets
@@ -236,3 +237,62 @@ def test_delivery_uses_a_local_secret_first_then_the_database(engine, monkeypatc
     assert noti_destinations.destination_secret("dest_test_main") == [stored]
     monkeypatch.setenv("NOTI_SECRET_DEST_TEST_MAIN", "whsec_local")
     assert noti_destinations.destination_secret("dest_test_main") == "whsec_local"
+
+
+# Drafts (saved by Boardy when the client approves) and activating them (3lay)
+
+def changed(config, max_attempts):
+    return {**config, "processing": {"max_attempts": max_attempts}}
+
+
+def statuses(engine, user_id):
+    with engine.connect() as connection:
+        return dict(connection.execute(
+            select(client_configurations.c.version, client_configurations.c.status)
+            .where(client_configurations.c.user_id == user_id)).all())
+
+
+def test_a_draft_is_saved_but_not_used(engine):
+    assert save_draft(engine, "u1", CONFIG) == (1, True)
+
+    assert latest_draft(engine, "u1") == (1, CONFIG)
+    with pytest.raises(ConfigurationNotFound):
+        load_active_configuration(engine, "rolepay-agent")
+
+
+def test_saving_the_same_draft_again_saves_nothing_new(engine):
+    save_draft(engine, "u1", CONFIG)
+
+    assert save_draft(engine, "u1", CONFIG) == (1, False)
+    assert save_draft(engine, "u1", changed(CONFIG, 4)) == (2, True)
+    assert statuses(engine, "u1") == {1: "draft", 2: "draft"}
+
+
+def test_a_draft_is_checked_before_saving(engine):
+    with pytest.raises(ValueError):
+        save_draft(engine, "u1", {**CONFIG, "destinations": "nowhere"})
+    assert latest_draft(engine, "u1") is None
+
+
+def test_activating_a_draft_retires_the_active_version(engine):
+    save_configuration(engine, "rolepay-agent", CONFIG)  # version 1, active
+    save_draft(engine, "u1", changed(CONFIG, 4))         # version 2, draft
+
+    assert activate_configuration(engine, "u1", 2) is True
+
+    assert statuses(engine, "u1") == {1: "retired", 2: "active"}
+    config, version, _ = load_active_configuration(engine, "rolepay-agent")
+    assert (version, config["processing"]) == (2, {"max_attempts": 4})
+    assert activate_configuration(engine, "u1", 2) is False  # already active
+
+
+def test_only_a_clients_own_draft_can_be_activated(engine):
+    save_configuration(engine, "rolepay-agent", CONFIG)
+    save_draft(engine, "u1", changed(CONFIG, 4))
+    activate_configuration(engine, "u1", 2)
+
+    with pytest.raises(ValueError, match="Version 1 is retired"):
+        activate_configuration(engine, "u1", 1)
+    with pytest.raises(ConfigurationNotFound):
+        activate_configuration(engine, "u2", 2)  # another client's version
+

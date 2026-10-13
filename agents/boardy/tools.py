@@ -25,6 +25,7 @@ from urllib.parse import urlsplit
 
 import openai
 from langchain_core.messages import ToolMessage
+from sqlalchemy.exc import SQLAlchemyError
 from langchain_core.tools import InjectedToolCallId, tool
 from langgraph.prebuilt import InjectedState
 from langgraph.types import Command, interrupt
@@ -37,7 +38,8 @@ from obed.extract import build_messages
 from orchy import nodes as orchy_nodes
 from orchy.envelope import reasons, verdict
 from rules import check_rule_definitions
-from store.configurations import check_configuration, run_settings
+from store.configurations import check_configuration, run_settings, save_draft
+from store.db import onboarding_engine
 
 MAX_ATTEMPTS_LIMIT = 5
 MAX_TRIES = 10              # try_on_samples runs per conversation: each one costs model calls
@@ -288,12 +290,30 @@ def submit_draft(summary: str, state: Annotated[dict, InjectedState],
     approved, comments = approval_answer(interrupt({
         "question": "approve_configuration", "summary": summary,
         "configuration": configuration}))
-    if approved:
-        return result(tool_call_id, "The client approved the configuration. It isn't active "
-                                    "yet: tell them 3lay will switch it on and let them know."
-                      + (f" Their comments: {comments}" if comments else ""), {APPROVED: True})
-    return result(tool_call_id, "The client didn't approve it. Their comments: "
-                                f"{comments or 'none'}. Ask what they'd like to change.")
+    if not approved:
+        return result(tool_call_id, "The client didn't approve it. Their comments: "
+                                    f"{comments or 'none'}. Ask what they'd like to change.")
+
+    # Saved as a draft: 3lay reviews and activates it. save_draft is
+    # idempotent, so if this step is ever replayed it doesn't save twice.
+    try:
+        version, _ = save_draft(onboarding_db(), state["user_id"], configuration)
+    except (SQLAlchemyError, RuntimeError) as exc:
+        return result(tool_call_id, f"The client approved it, but saving failed "
+                                    f"({type(exc).__name__}). Apologise and ask them to "
+                                    "approve again in a moment (call submit_draft again).")
+    return Command(update={
+        "messages": [ToolMessage(
+            f"The client approved the configuration; saved as draft version {version}. It isn't "
+            "active yet: tell them 3lay will review it, switch it on and let them know."
+            + (f" Their comments: {comments}" if comments else ""), tool_call_id=tool_call_id)],
+        "draft": {APPROVED: True},
+        "saved_version": version})
+
+
+def onboarding_db():
+    """Where approved configurations are saved (tests replace this)."""
+    return onboarding_engine()
 
 
 def from_document(sample, text):

@@ -144,6 +144,18 @@ def make_engine(url):
     )
 
 
+@cache
+def onboarding_engine():
+    """Boardy's database connection: ONBOARDING_DATABASE_URL, from App Configuration's
+    AGENTS:ONBOARDING_DATABASE_URL. It connects as agents_onboarding, a role that
+    can read usernames and configurations and add new ones, nothing else."""
+    url = os.environ.get("ONBOARDING_DATABASE_URL")
+    if not url:
+        raise RuntimeError("ONBOARDING_DATABASE_URL isn't set "
+                           "(App Configuration: AGENTS:ONBOARDING_DATABASE_URL)")
+    return make_engine(url)
+
+
 def database_configured():
     return bool(os.environ.get("DATABASE_URL"))
 

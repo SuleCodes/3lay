@@ -21,10 +21,12 @@ from boardy.conventions import check_schema_conventions, schema_at
 from boardy.draft import ADD_RULE, REMOVE_RULE, empty_draft, merge_draft, missing, to_configuration
 from boardy.instructions import INSTRUCTIONS
 from boardy.samples import MAX_SAMPLES, samples_from_folder, samples_text
+from boardy import tools as boardy_tools
 from boardy.tools import MAX_TRIES, approval_answer, read_sample, try_on_samples
 from orchy import nodes
 from conftest import api_error, pdf_bytes, png_bytes
-from store.configurations import check_configuration
+from store.configurations import (ConfigurationNotFound, check_configuration, latest_draft,
+                                  load_active_configuration)
 
 SCHEMA = {
     "$id": "rolepay-income-statement/1",
@@ -334,7 +336,7 @@ def test_merge_draft_applies_changes_in_order():
 
 # Memory (a checkpointer and thread ids) and pausing for approval (interrupt)
 
-USER_ID = "4f9c2a7e-user"
+USER_ID = "u1"  # rolepay-agent, in the test database (conftest.py)
 COMPLETE_DRAFT = merge_draft(empty_draft(), {
     "document_type": {"name": "income_statement", "description": "An actor's pay statement.",
                       "instructions": "Copy values exactly as printed."},
@@ -347,14 +349,16 @@ COMPLETE_DRAFT = merge_draft(empty_draft(), {
 
 
 @pytest.fixture
-def conversation(monkeypatch):
-    """A Boardy graph with an in-memory checkpointer and a scripted model.
+def conversation(monkeypatch, database):
+    """A Boardy graph with an in-memory checkpointer, a scripted model, and the
+    test database for saving approved configurations.
 
     Returns (send, graph, model): send(text_or_command, conversation_id) runs
     one turn of that conversation and returns the result.
     """
     model = ScriptedModel()
     monkeypatch.setattr(boardy_graph, "boardy_model", lambda: model)
+    monkeypatch.setattr(boardy_tools, "onboarding_db", lambda: database)
     graph = boardy_graph.build_graph(checkpointer=InMemorySaver())
 
     def send(text_or_command, conversation_id="onboarding", draft=None):
@@ -428,7 +432,7 @@ def test_submitting_pauses_the_conversation_with_the_configuration(conversation)
     assert len(model.seen) == 1  # the model waits too
 
 
-def test_approving_marks_the_draft_approved_and_boardy_carries_on(conversation):
+def test_approving_saves_a_draft_and_boardy_carries_on(conversation, database):
     send, _, model = conversation
     model.replies += [submit(), say("Thanks! 3lay will switch it on.")]
     send("Submit it", draft=COMPLETE_DRAFT)
@@ -436,9 +440,37 @@ def test_approving_marks_the_draft_approved_and_boardy_carries_on(conversation):
     result = send(Command(resume={"approved": True, "comments": ""}))
 
     assert result["draft"]["approved"] is True
-    assert tool_results(result)[-1].startswith("The client approved the configuration.")
+    assert result["saved_version"] == 1
+    assert tool_results(result)[-1].startswith(
+        "The client approved the configuration; saved as draft version 1.")
     assert result["messages"][-1].content == "Thanks! 3lay will switch it on."
     assert boardy_graph.pending_question(result) is None
+    assert latest_draft(database, USER_ID) == (1, to_configuration(COMPLETE_DRAFT))
+    with pytest.raises(ConfigurationNotFound):  # nothing is active until 3lay activates it
+        load_active_configuration(database, "rolepay-agent")
+
+
+def test_nothing_is_saved_before_the_client_answers(conversation, database):
+    send, _, model = conversation
+    model.replies += [submit()]
+
+    send("Submit it", draft=COMPLETE_DRAFT)
+
+    assert latest_draft(database, USER_ID) is None
+
+
+def test_if_saving_fails_the_draft_isnt_approved(conversation, monkeypatch):
+    send, _, model = conversation
+    model.replies += [submit(), say("Sorry, please approve again in a moment.")]
+    send("Submit it", draft=COMPLETE_DRAFT)
+
+    def no_database():
+        raise RuntimeError("ONBOARDING_DATABASE_URL isn't set")
+    monkeypatch.setattr(boardy_tools, "onboarding_db", no_database)
+    result = send(Command(resume={"approved": True, "comments": ""}))
+
+    assert result["draft"]["approved"] is False
+    assert "saving failed (RuntimeError)" in tool_results(result)[-1]
 
 
 def test_declining_leaves_it_unapproved_and_passes_on_the_comments(conversation):

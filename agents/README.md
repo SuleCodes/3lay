@@ -43,8 +43,10 @@ and with the job's managed identity when deployed.
 | App Configuration key | For |
 |---|---|
 | `AGENTS:OBED_MODEL`, `AGENTS:OBED_BASE_URL` | Obed's model, through Hugging Face Inference Providers |
+| `AGENTS:BOARDY_MODEL` | Boardy's model (needs tool calling), e.g. `openai/gpt-oss-120b:groq` |
 | `AGENTS:HF_TOKEN` | Hugging Face token (Key Vault reference) |
 | `AGENTS:DATABASE_URL` | The pipeline's database connection, as the limited `agents_pipeline` role (below), not the backend's owner role (Key Vault reference). Without it, runs use the configuration in `tmp/` files. |
+| `AGENTS:ONBOARDING_DATABASE_URL` | Boardy's database connection, as the `agents_onboarding` role (below): saves a configuration as a draft when the client approves it (Key Vault reference). |
 | `AGENTS:SECRETS_ENCRYPTION_KEY` (+ `_VERSION`) | Encrypts destination signing secrets (Key Vault reference). When the backend shows and rotates secrets, `BACKEND:SECRETS_ENCRYPTION_KEY` points at the same Key Vault secret. |
 | `AGENTS:LANGSMITH_*` | Optional tracing (synthetic documents only) |
 
@@ -91,6 +93,23 @@ Then add `AGENTS:DATABASE_URL` to App Configuration: the session pooler
 connection string with that role, ideally as a Key Vault reference. Supabase's
 pooler expects the user as `agents_pipeline.<project-ref>` (the project ref is
 in the dashboard URL and in `BACKEND:DATABASE_URL`).
+
+**2b. Create Boardy's database role.** Boardy saves a client's configuration
+as a draft when they approve it, so it needs to add configurations, which the
+pipeline's role can't. It can't touch secrets or events, and can't activate
+anything (that's `scripts/activate_configuration.py`, with the backend's
+connection):
+
+```sql
+create role agents_onboarding with login password 'choose-another-strong-password';
+grant usage on schema app to agents_onboarding;
+grant select (id, username) on app.users to agents_onboarding;
+grant select, insert on app.client_configurations to agents_onboarding;
+```
+
+Then add `AGENTS:ONBOARDING_DATABASE_URL` to App Configuration the same way as
+`AGENTS:DATABASE_URL` (session pooler, user `agents_onboarding.<project-ref>`,
+as a Key Vault reference).
 
 **3. Make the encryption key,** store it as a Key Vault secret, and add
 `AGENTS:SECRETS_ENCRYPTION_KEY` to App Configuration as a Key Vault reference

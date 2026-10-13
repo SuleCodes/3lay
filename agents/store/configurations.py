@@ -17,6 +17,11 @@ A configuration (see tools/Planner.md, "Client configuration"):
 For now exactly one document type (classification between several comes
 later) and no analyses. Versions are never edited: saving makes a new version,
 and activating it retires the previous one.
+
+A version is "draft" (saved, e.g. approved by the client through Boardy, but
+not used yet), "active" (the one Orchy uses; at most one per client) or
+"retired". Boardy saves drafts (save_draft); 3lay activates them
+(activate_configuration, through scripts/activate_configuration.py).
 """
 
 import uuid
@@ -135,28 +140,94 @@ def load_active_configuration(engine, username):
     return row.config, row.version, user_id
 
 
+def insert_version(connection, user_id, config, status, now):
+    """Adds the client's next version, with the given status. Returns the version."""
+    latest = connection.execute(
+        select(func.max(client_configurations.c.version))
+        .where(client_configurations.c.user_id == user_id)).scalar()
+    version = (latest or 0) + 1
+    connection.execute(client_configurations.insert().values(
+        id=str(uuid.uuid4()), user_id=user_id, version=version, status=status, config=config,
+        created_at=now, activated_at=now if status == "active" else None))
+    return version
+
+
+def retire_active(connection, user_id):
+    connection.execute(
+        update(client_configurations)
+        .where(client_configurations.c.user_id == user_id,
+               client_configurations.c.status == "active")
+        .values(status="retired"))
+
+
 def save_configuration(engine, username, config, activate=True):
     """Checks the configuration and saves it as the client's next version. Returns the version.
 
-    With activate (the default, until approval exists), the new version becomes
-    active and the previously active one is retired, in one transaction.
+    With activate (the default), the new version becomes active and the
+    previously active one is retired, in one transaction.
     """
     check_configuration(config)
     now = datetime.now(timezone.utc)
     with engine.begin() as connection:  # one transaction: all or nothing
         user_id = user_id_for(connection, username)
-        latest = connection.execute(
-            select(func.max(client_configurations.c.version))
-            .where(client_configurations.c.user_id == user_id)).scalar()
-        version = (latest or 0) + 1
         if activate:
-            connection.execute(
-                update(client_configurations)
-                .where(client_configurations.c.user_id == user_id,
-                       client_configurations.c.status == "active")
-                .values(status="retired"))
-        connection.execute(client_configurations.insert().values(
-            id=str(uuid.uuid4()), user_id=user_id, version=version,
-            status="active" if activate else "draft", config=config,
-            created_at=now, activated_at=now if activate else None))
-    return version
+            retire_active(connection, user_id)
+        return insert_version(connection, user_id, config,
+                              "active" if activate else "draft", now)
+
+
+def save_draft(engine, user_id, config):
+    """Saves the configuration as the client's next draft. Returns (version, saved).
+
+    Idempotent: if the client's latest version is already exactly this
+    configuration, nothing new is saved and saved is False. Boardy saves after
+    the client approves, and a resumed conversation can replay that step (see
+    submit_draft), so doing it twice must have the same effect as doing it once.
+    """
+    check_configuration(config)
+    with engine.begin() as connection:
+        latest = connection.execute(
+            select(client_configurations.c.version, client_configurations.c.config)
+            .where(client_configurations.c.user_id == user_id)
+            .order_by(client_configurations.c.version.desc()).limit(1)).first()
+        if latest is not None and latest.config == config:
+            return latest.version, False
+        return insert_version(connection, user_id, config, "draft",
+                              datetime.now(timezone.utc)), True
+
+
+def latest_draft(engine, user_id):
+    """(version, configuration) of the client's newest draft, or None."""
+    with engine.connect() as connection:
+        row = connection.execute(
+            select(client_configurations.c.version, client_configurations.c.config)
+            .where(client_configurations.c.user_id == user_id,
+                   client_configurations.c.status == "draft")
+            .order_by(client_configurations.c.version.desc()).limit(1)).first()
+    return (row.version, row.config) if row else None
+
+
+def activate_configuration(engine, user_id, version):
+    """Makes a draft the client's active configuration, retiring the active one.
+
+    Returns False if it was already active. Raises ConfigurationNotFound if the
+    client has no such version, ValueError if it's retired.
+    """
+    with engine.begin() as connection:
+        status = connection.execute(
+            select(client_configurations.c.status)
+            .where(client_configurations.c.user_id == user_id,
+                   client_configurations.c.version == version)).scalar()
+        if status is None:
+            raise ConfigurationNotFound(f"There's no version {version}")
+        if status == "active":
+            return False
+        if status != "draft":
+            raise ValueError(f"Version {version} is {status}; only a draft can be activated")
+        retire_active(connection, user_id)
+        connection.execute(
+            update(client_configurations)
+            .where(client_configurations.c.user_id == user_id,
+                   client_configurations.c.version == version)
+            .values(status="active", activated_at=datetime.now(timezone.utc)))
+    return True

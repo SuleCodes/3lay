@@ -17,8 +17,10 @@ invented documents: samples are sent to the model provider.
 
 Each tool call and its result is printed, so you can watch the agent loop.
 When Boardy asks for approval (submit_draft), the conversation pauses until you
-answer yes or no; nothing is saved yet (stage B5). Type "draft" to see the
-draft so far, "quit" to stop. Uses AGENTS:BOARDY_MODEL.
+answer yes or no. Yes saves the configuration as a draft version (through
+AGENTS:ONBOARDING_DATABASE_URL); review and activate it with
+scripts/activate_configuration.py. Type "draft" to see the draft so far,
+"quit" to stop. Uses AGENTS:BOARDY_MODEL.
 """
 
 import argparse
@@ -101,6 +103,10 @@ def main():
         result = graph.invoke(graph_input, config)
         new = result["messages"][seen:]
         show_new_messages(new if isinstance(graph_input, Command) else new[1:], args.quiet)
+
+        if isinstance(graph_input, Command) and result.get("saved_version"):
+            print(f"[saved as draft version {result['saved_version']}: review and activate with "
+                  f"python scripts/activate_configuration.py {args.username}]")
 
         question = pending_question(result)
         if question:
