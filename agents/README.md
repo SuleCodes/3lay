@@ -17,6 +17,9 @@ agents/
   tmp/          local, gitignored: fixtures, schema, rules, runs, gold standards
 ```
 
+Deployed as a Container Apps job woken by the ingest queue: see
+[DEPLOY.md](DEPLOY.md).
+
 ## Setup
 
 From `agents/`, with Python 3.11:

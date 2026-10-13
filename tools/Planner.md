@@ -183,6 +183,8 @@ The destination always comes from approved configuration, never from Obed's outp
   Clients get a status (e.g. `onboarding → active → suspended`). The Worker's
   recipient check rejects any client that isn't `active`, with a bounce message
   that says why, before the email costs a Function call, storage or an LLM call.
+  *Not built yet:* until it is, a client with no active configuration has its
+  emails moved to the poison queue by the ingest job.
 - **End users never see 3lay.** Email end users don't get replies, for now.
   Chat bots (a later channel) talk to end users, but always as the client's own
   bot. Clients see results and metrics in the frontend.
@@ -198,19 +200,23 @@ The destination always comes from approved configuration, never from Obed's outp
 - **The frontend has both** a run dashboard and a chat with Boardy.
 - **Models are swappable through configuration.** The abstraction is
   LangChain's chat-model interface (`provider:model` strings), with a model set
-  for each agent in App Config (e.g. `BACKEND:OBED_MODEL`,
-  `BACKEND:JUSTICE_MODEL`). Hugging Face is one possible provider.
+  for each agent in App Config (`AGENTS:OBED_MODEL` today; e.g.
+  `AGENTS:JUSTICE_MODEL` later). Hugging Face is one possible provider.
 - **Data residency is configurable per client** (later). Some clients have no
   requirement (Rolepay); others do (e.g. a client that needs its data processed
   in Europe). The client's configuration states the requirement, e.g. `none`,
   `uk`, `eu` or `us`, and 3lay routes each model call to a deployment in that
   region. See "Data residency" under step 1.
-- **Provider for learning:** roadmap step 1 starts with Hugging Face Inference
-  Providers (synthetic documents only), with `google/gemma-4-26B-A4B-it` as
-  Obed's first model.
-- **Pricing is per event:** clients are billed on the number of events created.
-  Which events count (e.g. failures caused by 3lay, reprocessing) is to be
-  decided with the client configuration.
+- **Provider:** Hugging Face Inference Providers, through its
+  OpenAI-compatible router. Obed's model is set in `AGENTS:OBED_MODEL`
+  (currently `google/gemma-4-31B-it:novita`); the provider must support
+  structured output (`agents/scripts/list_models.py --check`). Novita
+  under-reports image input tokens, so its costs look too low.
+- **Pricing is per event:** clients are billed on the number of events
+  created. Completed events and failures caused by the sender are billable;
+  failures caused by 3lay (`processing_error`, `processing_timeout`) aren't;
+  reprocessing is billed only when the client asks for it. Recorded on each
+  event (`events.billable`).
 - **Retry limits can be set by each client,** within limits set by 3lay.
 - **Framework:** LangChain for talking to models (one interface for every
   provider, structured output); LangGraph for orchestration (Orchy's graph) and
@@ -218,9 +224,17 @@ The destination always comes from approved configuration, never from Obed's outp
 - **Deployment:** the pipeline runs as a Container Apps job triggered by the
   ingest queue; Boardy runs in the backend API. See "Deployment" under
   Architecture.
-- **Way of working:** I (Seth) write the code; Claude reviews it and explains the concepts.
+- **Way of working:** each concept is explained first (with docs or an example
+  in a different domain); once it's understood, Claude implements it with
+  tests and Seth reviews and debugs the flow. Azure changes are written out
+  for Seth to run.
 
 ## Architecture
+
+The target shape. Built and deployed so far: Worker, Function, and Orchy with
+`load_inputs → extract → validate → finish → build_envelope → deliver`
+(webhooks only), recording every run. Not built yet: the Worker's active-client
+check and cap, `classify`, analyses and Justice.
 
 ```
 Email ─▶ Worker (reject if not active or over the cap) ─▶ Function (event_id, blob, queue)
@@ -291,11 +305,13 @@ separate modules, so one can be split into its own service later if it needs to
   and…". Treat their content as data, give Obed no outbound tools, and take
   destinations only from configuration.
 - **Personal data (UK GDPR):** payslips contain names, National Insurance
-  numbers, pay and tax. 3lay is a data processor for its clients. Decide:
-  - the LLM provider's data terms and where data is processed (e.g. Azure AI
-    Foundry in UK South)
-  - how long raw emails and results are kept
-  - a data processing agreement with Rolepay
+  numbers, pay and tax. 3lay is a data processor for its clients.
+  - Decided: the database is in Supabase eu-west-1 and storage in UK South;
+    personal data in event records is kept 90 days
+    (`events.personal_data_expires_at`).
+  - Still to decide: the LLM provider's data terms and where model calls are
+    processed (Hugging Face routes to third-party providers); how long raw
+    emails in Blob Storage are kept; a data processing agreement with Rolepay.
 - **Model choice:** not every model handles structured output or tool calling
   well, and reading documents needs OCR or a model that can read images. A
   dedicated Hugging Face GPU endpoint costs far more than the budget. Pay-per-token
@@ -308,65 +324,52 @@ separate modules, so one can be split into its own service later if it needs to
 
 ## Roadmap
 
-Build from the inside out; each step teaches one concept.
+Build from the inside out; each step teaches one concept. The order changed
+along the way: an end-to-end slice (E1–E6, below) was built before Justice, and
+Boardy now comes before Justice, because onboarding produces each client's
+test set, which Justice needs to be judged against.
 
-| # | Step | What it teaches |
+| Step | Status | What it teaches |
 |---|---|---|
-| 0 | **Design on paper** (done, see below) | Data modelling, contracts |
-| 1 | Obed alone: one statement or payslip → validated JSON, LangChain only (no graph yet) | Prompting, structured output, OCR vs vision, swapping models |
-| 2 | Wrap in LangGraph, add checks and a retry/fail edge | State, nodes, conditional edges |
-| 3 | Add Justice | LLM as judge, evaluating the judge |
-| 4 | Noti as a plain node: sign and POST the webhook | Mixing code and LLM steps |
-| 5 | Trigger the graph from the queue; write events | Running agents in production |
-| 6 | Run dashboard in the frontend | Events, timeline, metrics |
-| 7 | Boardy | Human in the loop, checkpointers, streaming |
+| Design on paper | Done (below) | Data modelling, contracts |
+| Obed alone: one document → validated JSON, LangChain only | Done | Prompting, structured output, swapping models |
+| Orchy: LangGraph graph with checks and retry/fail routing | Done | State, nodes, reducers, conditional edges |
+| Rules as data | Done | A generic engine; client rules as configuration |
+| End-to-end slice E1–E6: email in, signed webhook out, recorded, deployed | **Done, deployed 2026-10-13** | Running agents in production |
+| **Boardy** | **Next** | An agent with tools, human in the loop, checkpointers, streaming |
+| Gold standard and test set (from Boardy's onboarding samples) | To do | Evaluation |
+| Justice | To do | LLM as judge, evaluating the judge |
+| Run dashboard | To do | Events, timeline, metrics |
+| Operations: Worker rejects inactive clients, watchdog, 90-day deletion | To do, before a real client relies on it | Running safely |
 
-Rolepay works end to end after step 5, with a configuration written by hand.
-Boardy then replaces the hand-written configuration.
+Today Rolepay's configuration is written by hand
+(`agents/scripts/save_configuration.py`). Boardy will replace that.
 
-### Step 2: Orchy's first graph (decided 2026-10-07)
+### Orchy's graph (decided 2026-10-07, extended through E1–E6)
 
-```
-START ─▶ load_inputs ─▶ extract ─▶ validate ─▶ END (completed)
-              │            │  ▲         │
-              │            │  └─────────┘ schema check failed: retry
-              │            ├─▶ extract     transient error: retry
-              ▼            ▼
-        END (failed)  END (failed)        permanent error, or still erroring
-                                          after the last attempt
-```
-
-**State** (the event's working memory; nodes return only the fields they change):
-
-| Field | Set by | Purpose |
-|---|---|---|
-| `event_id` | start | Identity; ends up in the envelope |
-| `document_path` | start | Where the document is (later a blob reference) |
-| `instructions`, `output_schema`, `schema_name` | start | From the client's configuration |
-| `max_attempts` | start | Retry limit from the configuration (default 3) |
-| `page_count` | `load_inputs` | Proves the document opened |
-| `extraction`, `usage` | `extract` | The parsed JSON and token counts |
-| `attempts` | `extract` | Tries so far in this run |
-| `checks` | `validate` | `{name, passed, message}` per check |
-| `status` | routing | `processing`, `completed` or `failed` |
-| `error_code`, `error_message` | any node | Why it failed (codes from the event lifecycle) |
-| `steps` | every node | The step timeline; accumulates instead of being replaced |
+The current graph and its state are documented where they're defined, so they
+can't drift from the code: `agents/orchy/graph.py` (the flow and routing) and
+`agents/orchy/state.py` (the state). In short: an event is one email with one
+or more documents (sources); each document moves `pending → extracted → done`
+(or `retry`, `failed`); `finish` decides the event's status from all of them;
+`build_envelope` and `deliver` follow.
 
 Decisions:
-- **Page images are not in the state.** The state holds the document
-  reference and `extract` renders the pages itself, so a checkpointer (step 5)
-  never saves megabytes of images after every step. `load_inputs` only checks
-  the document opens, failing early with `document_unreadable`.
+- **Page images and attachment bytes are not in the state.** The state holds
+  the email's location and each attachment's position; `extract` reads and
+  renders an attachment when it needs it, so a checkpointer never saves
+  megabytes of images after every step. `load_inputs` only checks each
+  attachment opens, recording `document_unreadable` early.
 - **Output that fails the JSON Schema check is retried,** within the same
   attempt limit as transient errors. If it still fails after the last attempt,
-  the event is **completed with the failed check recorded**, so Justice and the
-  verdict flag it as `needs_review`. An event only fails when nothing usable
-  came back.
+  the document is **done with the failed check recorded**, so the verdict
+  (and later Justice) flags it as `needs_review`. An event only fails when
+  nothing usable came back.
 - **Transient (retried):** timeouts, rate limits (429), provider errors (5xx),
   and output that couldn't be parsed. **Permanent (fail at once):** unreadable
   document, structured output not supported, bad token or other 4xx.
 
-### End-to-end slice (agreed 2026-10-08)
+### End-to-end slice (agreed 2026-10-08; done and deployed 2026-10-13)
 
 Before Justice and before perfecting the gold standard: get one email all the
 way from the inbox to a client's webhook, then improve each part on a pipeline
@@ -379,7 +382,7 @@ deployed (E6).
 | E2 | **Envelope, with a verdict from the checks:** all passed → `accepted`; a `needs_review` rule failed → `needs_review`; a `reject` rule failed → `rejected` | Real output format |
 | E3 | **Noti:** the envelope POSTed to the client's webhook, HMAC-signed, with retries and a delivery record | Delivery |
 | E4 | **Client configuration in Postgres** (Alembic migration in the backend; Rolepay added by hand until Boardy exists) | No more `tmp/` configuration |
-| E5 | **Event records** (`events`, `event_steps`) in Postgres | A history of every run |
+| E5 | **Event records** (`events`, `event_sources`, `event_steps`, `deliveries`) in Postgres | A history of every run |
 | E6 | **Queue job on Container Apps:** wakes on each ingest queue message, runs the graph | Fully automatic |
 
 Decisions:
@@ -466,10 +469,38 @@ Decisions:
   timings, tokens and billable are kept.
 - **One runner for local and deployed runs:** `orchy/runner.py`'s
   `process_event` loads the configuration, records the start, runs the graph
-  and records the outcome; `run_orchy.py` uses it now, the queue job (E6) will.
+  and records the outcome; `run_orchy.py` and the queue job both use it.
 
-Tables this implies (E4/E5): `client_configurations` (one row per version,
-destinations inside), `destination_secrets`, `events`, `event_steps`,
+**E6 decisions** (agreed 2026-10-13; `agents/jobs/ingest.py`, `agents/Dockerfile`,
+`agents/DEPLOY.md`):
+- **The pipeline runs as a Container Apps job, `caj-3lay-orchy`,** woken by
+  the `ingest-jobs` queue (checked every 30 s), scaling to zero. Each
+  execution processes the waiting messages through `process_event`, then exits.
+- **A message is deleted only once its run is recorded.** A crash leaves it
+  on the queue to reappear after 30 minutes and be retried; after 5 attempts it
+  moves to `ingest-jobs-poison`. A client with no active configuration goes
+  straight to the poison queue (until the Worker rejects such emails).
+- **A user-assigned identity, `id-3lay-orchy`,** created and given its
+  permissions before the job exists: pull from the registry, read blobs,
+  receive and delete on the two queues only, and `get` on Key Vault secrets.
+  The queue trigger was meant to use it too; as deployed it uses the fallback,
+  a storage connection string stored as the job secret `queue-connection`.
+- **App Configuration is read with its read-only connection string,** as a job
+  secret.
+- **The backlog was cleared at go-live** rather than processed: the emails
+  stay in Blob Storage.
+- **The job is created from a YAML definition**
+  (`agents/deploy/caj-3lay-orchy.template.yaml`), because the queue trigger's
+  identity can only be set there.
+- **Messages whose email is gone** (the client deleted their account) are
+  skipped and deleted.
+- Learned at go-live: Git Bash needs `export MSYS_NO_PATHCONV=1` for Azure
+  resource IDs, and `AGENTS:RAW_CONTAINER_NAME` must match the function's
+  `FUNCTION:RAW_CONTAINER_NAME` (`rawinjest3layprod`). Both are in
+  `agents/DEPLOY.md`.
+
+Tables (E4/E5): `client_configurations` (one row per version, destinations
+inside), `destination_secrets`, `events`, `event_sources`, `event_steps`,
 `deliveries` (one row per attempt, by destination ID). `events` stores the
 envelopes, so it holds personal data: retention and region apply.
 
@@ -887,7 +918,11 @@ client's requirements.
 The data is always a **list of items**, because one email can hold any number
 of documents, and other clients' sources can't be predicted.
 
-#### Envelope (revised)
+#### Envelope (as built in E2)
+
+The contract is pinned down in code by `ENVELOPE_SCHEMA` in
+`agents/orchy/envelope.py`, and every envelope the tests build is checked
+against it. This example follows it:
 
 ```json
 {
@@ -895,25 +930,34 @@ of documents, and other clients' sources can't be predicted.
     "event_type": "event.completed",
     "event_id": "3f6c1a2e-8b4d-4c1e-9a7f-2d5b6e8c9f01",
     "run": 1,
-    "case_ref": "c-7d2e9b41",
-    "received_at": "2026-10-05T14:03:12Z",
-    "finished_at": "2026-10-05T14:03:41Z",
-    "sender": "sam.smith@example.com",
+    "case_ref": "3f6c1a2e-8b4d-4c1e-9a7f-2d5b6e8c9f01",
+    "received_at": "2026-10-09T14:03:12.000+00:00",
+    "finished_at": "2026-10-09T14:03:41.000+00:00",
+    "sender": "actor@example.com",
     "status": "completed",
-    "summary": { "accepted": 1, "needs_review": 0, "rejected": 0 },
+    "summary": { "accepted": 1, "needs_review": 1, "rejected": 0 },
     "config_version": 1,
     "dashboard_url": "https://app.3lay.live/events/3f6c1a2e-8b4d-4c1e-9a7f-2d5b6e8c9f01",
     "items": [
         {
-            "source": { "attachment": "statement-january.pdf", "page": 1 },
+            "source": { "attachment": "jan.pdf", "location": "0", "forwarded_from": null },
             "document_type": "income_statement",
             "schema": { "id": "rolepay-income-statement", "version": 1 },
             "verdict": "accepted",
-            "confidence": {
-                "overall": 0.94,
-                "fields": { "gross": 0.99, "net": 0.98, "year_to_date_tax": 0.81 }
-            },
-            "data": { "...": "one object matching the client's schema" }
+            "confidence": null,
+            "reasons": [],
+            "data": { "...": "one object matching the client's schema" },
+            "error": null
+        },
+        {
+            "source": { "attachment": "feb.pdf", "location": "1 > 0", "forwarded_from": "agency@example.com" },
+            "document_type": "income_statement",
+            "schema": { "id": "rolepay-income-statement", "version": 1 },
+            "verdict": "needs_review",
+            "confidence": null,
+            "reasons": ["dates_plausible: A date is implausible: ..."],
+            "data": { "...": "..." },
+            "error": null
         }
     ],
     "analyses": [],
@@ -925,19 +969,23 @@ of documents, and other clients' sources can't be predicted.
 |---|---|
 | `envelope_version` | Version of this envelope format: 3lay's contract with every client. Changes rarely. |
 | `event_type` | Lets the receiver route without reading the body: `event.completed` or `event.failed`. |
-| `case_ref` | The case this event belongs to. Events that belong together (a reply in the same thread, a matching reference, a chat conversation) share a `case_ref`; otherwise each event starts its own case. |
-| `run` | Which run of the event this is. A higher run replaces an earlier result for the same `event_id`; `event_id` + `run` identifies a delivery, so retries can be safely ignored as duplicates. |
+| `case_ref` | The case this event belongs to. Until case matching exists, each event is its own case (`case_ref` = `event_id`). |
+| `run` | Which run of the event this is. A higher run replaces an earlier result for the same `event_id`; `event_id` + `run` is the delivery's `webhook-id`, so retries can be recognised as duplicates. |
 | `received_at` / `finished_at` | When the email arrived, and when this run finished (completed or failed). ISO 8601, UTC. |
+| `sender` | The email's sender (From address). |
 | `status` | `completed` or `failed` (only finished runs are delivered). |
 | `summary` | Count of items per verdict, so the receiver can route without reading every item. |
 | `config_version` | Which version of the client's configuration this run used. |
 | `dashboard_url` | Where the client sees this event in the frontend, especially for failures. |
-| `items` | One entry per document found. Each wraps the client's data with 3lay's information about it. |
-| `items[].document_type` / `schema` | What the document was classified as, and which of the client's Boardy-defined schemas (and which version of it) its `data` matches. Separate from `envelope_version`. |
-| `items[].source` | Which attachment (and page) the item came from, for tracing a value back to the document. |
-| `items[].verdict` / `confidence` | `accepted`, `needs_review` or `rejected`. A rejected item has an `error` (same codes as events) and `data` is null. Per item, so one clear payslip and one blurry one in the same email get different verdicts. Field paths are relative to the item's `data`, so they work for any schema. |
-| `analyses` | Results of cross-document analyses across the whole case, if the client has any: one entry per analysis, each with its own verdict, confidence, `data` (matching the analysis's output schema) and rule outcomes. Empty for Rolepay. |
-| `error` | Set when the whole event failed (`items` is then empty), e.g. `{ "code": "no_documents_found", "message": "…" }`. |
+| `items` | One per attachment found, including ones that couldn't be processed. Each wraps the client's data with 3lay's information about it. |
+| `items[].source` | Which attachment it came from: its name, `location` in the email (`"1 > 0"` is inside a forwarded email) and `forwarded_from`. |
+| `items[].document_type` / `schema` | What the document is, and which of the client's schemas (and which version of it) its `data` matches. Separate from `envelope_version`. |
+| `items[].verdict` | `accepted`, `needs_review` or `rejected`, from the checks until Justice exists. |
+| `items[].confidence` | `null` until Justice: then a confidence per field. |
+| `items[].reasons` | Why the verdict isn't `accepted`: each failed check, or the error. |
+| `items[].data` / `error` | The extraction, or `null` with an `error` (`code`, `message`) for an attachment that couldn't be processed. |
+| `analyses` | Results of cross-document analyses, when a client has any. Empty for Rolepay. |
+| `error` | Set when the whole event failed, e.g. `{ "code": "no_documents_found", "message": "…" }`. `items` still lists any attachments that were rejected. |
 
 The HMAC signature goes in a request header, not in the body.
 

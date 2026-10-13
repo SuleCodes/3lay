@@ -2,30 +2,39 @@
 
 Any input in, structured data out — via agentic extraction and webhooks.
 
-The repo currently has two working parts:
+Working end to end, and deployed:
 
 - **Accounts:** email-only sign-up and sign-in (magic link, no passwords), and
   API key management. A FastAPI backend and a Next.js dashboard.
-- **Email ingestion:** emails sent to any `@in.3lay.live` address are stored
-  raw in Azure Blob Storage, and queued for processing.
+- **Email ingestion:** emails sent to a client's `@in.3lay.live` address are
+  stored raw in Azure Blob Storage, and queued for processing.
+- **Processing:** an agentic pipeline (LangGraph) takes each queued email,
+  extracts every attachment into the client's own schema, checks the result
+  against the client's rules, records the run in Postgres, and delivers a
+  signed webhook to the client. Each client's configuration lives in the
+  database.
 
-The extraction engine (turning stored inputs into structured data) and
-outbound webhooks come next, on top of these.
+The design, decisions and roadmap for the agents (including Boardy, the
+onboarding agent that will write client configurations) are in
+[tools/Planner.md](tools/Planner.md).
 
 ```
 backend/                  FastAPI + SQLAlchemy + Postgres (Supabase), migrations via Alembic; ships as a container
 frontend/                 Next.js (App Router) + Tailwind, exported as a static site
+agents/                   The agentic pipeline (LangGraph): extraction, rules, delivery; ships as a Container Apps job
 infra/function/           Azure Function: stores raw inputs in Blob Storage, queues a job
 infra/cloudflare-worker/  Cloudflare Email Worker: receives inbound email, calls the function
-.vscode/launch.json       Run and debug the backend and frontend together
+tools/                    Planner.md (agents design and roadmap) and a local notes tracker
+.vscode/launch.json       Run and debug the backend, frontend and agents
+3lay.code-workspace       Multi-root workspace: each project with its own Python interpreter
 ```
 
 The frontend never talks to a database directly. Every piece of data goes
 through the backend API, so `backend/` is the single source of truth for what
 the webapp (or any future client) can do.
 
-Each folder under `infra/` and `backend/` has its own README with setup,
-deployment and troubleshooting details.
+Each of `backend/`, `frontend/`, `agents/` and the folders under `infra/` has
+its own README with setup, deployment and troubleshooting details.
 
 ## How auth works
 
@@ -77,7 +86,12 @@ sender ──► anything@in.3lay.live
              ▼
            Azure Function func-3lay-injest
              ├─► Blob:  <client>/<origin>/YYYY/MM/DD/<id>   (raw, byte-for-byte)
-             └─► Queue: small JSON job pointing at the blob
+             └─► Queue: small JSON job pointing at the blob (ingest-jobs)
+                   │
+                   ▼
+           Container Apps job caj-3lay-orchy (agents/), woken by the queue
+             loads the client's configuration, extracts each attachment,
+             checks it, records the run, delivers a signed webhook
 ```
 
 - **Who it's for:** the *client* is the address the email was delivered to,
@@ -90,11 +104,13 @@ sender ──► anything@in.3lay.live
 - **Only registered clients:** the Worker asks the backend whether the
   recipient is `{username}@in.3lay.live` for an existing account, and bounces
   everything else before it's stored.
-- **Not yet built:** checking the client is *paying* (today any registered
-  account passes), and processing the queued jobs.
+- **Not yet built:** checking the client is *active* (finished onboarding,
+  paying, under its cap). Today any registered account passes, and a client
+  with no active configuration has its emails moved to a poison queue.
 
-Details: [infra/function/README.md](infra/function/README.md) and
-[infra/cloudflare-worker/README.md](infra/cloudflare-worker/README.md).
+Details: [infra/function/README.md](infra/function/README.md),
+[infra/cloudflare-worker/README.md](infra/cloudflare-worker/README.md) and
+[agents/README.md](agents/README.md).
 
 ## Configuration
 
@@ -158,15 +174,14 @@ migrations.
 | Database | Supabase project (Postgres 17, region eu-west-1), schema `app` |
 | Ingest function | Azure Function App `func-3lay-injest` (resource group `rg-3lay-prod`, UK South) |
 | Raw storage | Storage account `rawinjest3layprod`: container `rawinjest3layprod`, queue `ingest-jobs` |
-| Backend image | Azure Container Registry `containerreg3lay` (`containerreg3lay.azurecr.io/3lay-backend`) |
+| Backend | Container App `ca-3lay-api` at `https://api.3lay.live` (image `containerreg3lay.azurecr.io/3lay-backend`) |
+| Agents | Container Apps job `caj-3lay-orchy`, identity `id-3lay-orchy` (image `containerreg3lay.azurecr.io/3lay-agents`); see [agents/DEPLOY.md](agents/DEPLOY.md) |
+| Secrets | Key Vault `vault3lay`, referenced from App Configuration |
 | Frontend | Azure Static Web App (Free plan) at `app.3lay.live`; see [frontend/README.md](frontend/README.md#deploying) |
 | Email Worker | Cloudflare Worker `3lay-cell-82f0` |
 | Ingest email domain | `in.3lay.live`, a catch-all routed to the Worker. Mail to `@3lay.live` itself is not ingested. |
 
-The backend image is built and pushed to the registry, but nothing runs it
-yet. Creating the Azure app that runs it is the next step; see
-[backend/README.md](backend/README.md#deploying-container). The frontend isn't
-deployed yet.
+All of these run in `rg-3lay-prod` (UK South), apart from the database (Supabase, eu-west-1) and the Worker (Cloudflare).
 
 ## Running it locally
 
@@ -230,12 +245,17 @@ testing the Worker with `wrangler dev` and deploying it.
 
 ## What's next
 
+- **Boardy:** the onboarding agent that writes a client's configuration
+  through a conversation, tests it on their sample documents and gets their
+  approval. Today configurations are written by hand
+  (`agents/scripts/save_configuration.py`).
+- **Justice:** a second model judging each extraction, with a confidence per
+  field.
+- **Before a real client relies on it:** the Worker rejecting email for
+  clients that aren't active, a watchdog for runs stuck in `processing`, and
+  deleting personal data after 90 days.
+- **The run dashboard:** the event records, in the frontend.
 - **Open up sign-in emails:** verify `3lay.live` in Resend and set
   `BACKEND:EMAIL_FROM` (see [Sign-in emails](#sign-in-emails-resend)).
-- **Paid-client check:** client and subscription tables in the backend,
-  synced to a Workers KV allowlist, so the Worker bounces email for
-  addresses that aren't active.
-- **Processing:** a queue-triggered worker that reads each stored input and
-  runs the extraction workflow.
-- **Webhooks:** delivering the structured output to the client's endpoint.
-- **Deploy the backend and frontend.**
+
+The full roadmap is in [tools/Planner.md](tools/Planner.md).

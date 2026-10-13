@@ -10,5 +10,7 @@ psycopg[binary]==3.3.6
 cryptography==50.0.2
 azure-appconfiguration-provider==2.5.0
 azure-identity==1.26.0
+azure-storage-blob==12.31.0
+azure-storage-queue==12.18.0
 pytest==9.1.1
 standardwebhooks==1.1.0

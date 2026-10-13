@@ -30,7 +30,7 @@
     {
       // Runs the open file (e.g. a script in agents/scripts) with the agents'
       // own Python, so agents/.venv never needs activating. Settings come
-      // from agents/.env.
+      // from agents/.env, then App Configuration (agents/settings.py).
       "name": "Agents: current file",
       "type": "debugpy",
       "request": "launch",

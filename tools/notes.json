@@ -1,5 +1,5 @@
 {
-  "savedAt": "2026-10-08T14:57:59.845Z",
+  "savedAt": "2026-10-13T14:24:05.109+00:00",
   "notes": [
     {
       "id": "0510113e-9eaf-42de-990e-c3ddf80b9fef",
@@ -24,7 +24,7 @@
     {
       "id": "8cecb62d-8b51-4d10-b00c-eaf835ef5c4d",
       "title": "Design: event lifecycle",
-      "description": "Event states and allowed moves (e.g. received → processing → extracted → judged → delivered), failure points, failed vs needs_review, delivery retries, what each step records for the timeline. See Planner.md, 'Design on paper'.",
+      "description": "Event states and allowed moves (e.g. received \u2192 processing \u2192 extracted \u2192 judged \u2192 delivered), failure points, failed vs needs_review, delivery retries, what each step records for the timeline. See Planner.md, 'Design on paper'.",
       "type": "feature",
       "priority": "high",
       "date": "2026-10-05",
@@ -44,7 +44,7 @@
     {
       "id": "c2dc568b-80e0-41da-81c3-8126f98cf4a6",
       "title": "Reject emails until client onboarding is complete",
-      "description": "Add a client status (onboarding → active → suspended). The Worker's recipient check rejects clients that aren't active, with a bounce message giving the reason, before any Function call, storage or LLM cost.",
+      "description": "Add a client status (onboarding \u2192 active \u2192 suspended). The Worker's recipient check rejects clients that aren't active, with a bounce message giving the reason, before any Function call, storage or LLM cost.",
       "type": "feature",
       "priority": "high",
       "date": "2026-10-05",
@@ -54,21 +54,21 @@
     {
       "id": "881e1ca0-62ca-4be3-b5aa-521344f21d63",
       "title": "Event tracking: events, event_steps, results",
-      "description": "Use the ingest Function's ID as event_id and carry it through the queue message, graph, database, webhook payload and frontend. Tables: events (status, verdict), event_steps (one row per step: timing, output, error), results (extracted JSON + Justice scores). Decide retention.",
+      "description": "Built in E5 (migration 8d3f6b1e4a27): events, event_sources, event_steps, deliveries; recorded at the start and end of every run (agents/store/events.py), duplicates skipped, billable flag, personal_data_expires_at. The ingest_id is the event_id.",
       "type": "feature",
       "priority": "high",
       "date": "2026-10-05",
-      "done": false,
+      "done": true,
       "createdAt": "2026-10-05T14:38:45.520Z"
     },
     {
       "id": "35e44072-3d01-4f83-9278-44ad1ff2cb6d",
       "title": "Obed: payslip extraction with structured output",
-      "description": "Roadmap step 1. A plain script, no framework: one payslip → JSON validated against a Pydantic model. Compare OCR vs a model that can read images. Email content is untrusted; Obed gets no outbound tools.",
+      "description": "Roadmap step 1. A plain script, no framework: one payslip \u2192 JSON validated against a Pydantic model. Compare OCR vs a model that can read images. Email content is untrusted; Obed gets no outbound tools.",
       "type": "feature",
       "priority": "high",
       "date": "2026-10-05",
-      "done": false,
+      "done": true,
       "createdAt": "2026-10-05T14:38:45.521Z"
     },
     {
@@ -78,13 +78,13 @@
       "type": "feature",
       "priority": "high",
       "date": "2026-10-05",
-      "done": false,
+      "done": true,
       "createdAt": "2026-10-05T14:38:45.522Z"
     },
     {
       "id": "1b8dde1f-9500-4a43-b1f5-a73388886d82",
       "title": "Deterministic checks before Justice",
-      "description": "Plain-code validation: matches the schema; business rules (gross − deductions = net, plausible tax, valid dates). Free, instant, no hallucination.",
+      "description": "Plain-code validation: matches the schema; business rules (gross \u2212 deductions = net, plausible tax, valid dates). Free, instant, no hallucination.",
       "type": "feature",
       "priority": "high",
       "date": "2026-10-05",
@@ -104,27 +104,27 @@
     {
       "id": "a0787d81-c964-42cc-b48a-2341deb63c8b",
       "title": "Noti: channel adapters, webhook first",
-      "description": "Roadmap step 4. One interface, an adapter per channel. Webhook: HMAC-signed with a secret per client, safe retries without duplicates (event_id), URL validated at onboarding against SSRF. Destination only ever from approved config.",
+      "description": "Webhook delivery built in E3 (agents/noti/): Standard Webhooks HMAC signing, one secret per destination (encrypted in destination_secrets), retries for 5xx/429/timeouts with exponential waits, redirects not followed, every attempt recorded. Other channels: see 'Notification channels beyond webhooks'.",
       "type": "feature",
       "priority": "high",
       "date": "2026-10-05",
-      "done": false,
+      "done": true,
       "createdAt": "2026-10-05T14:38:45.525Z"
     },
     {
       "id": "51d317d3-9643-4635-bc36-072c9451f326",
       "title": "Run the graph from the ingest queue",
-      "description": "Roadmap step 5. Run the pipeline graph as an event-driven Container Apps job scaled by the ingest queue (same environment and registry as the backend). Retries, poison queue, steps safe to re-run; write event records. See Planner.md, Architecture > Deployment.",
+      "description": "Built and deployed in E6 (2026-10-13): Container Apps job caj-3lay-orchy, woken by the ingest-jobs queue; agents/jobs/ingest.py; poison queue after 5 attempts. See agents/DEPLOY.md.",
       "type": "feature",
       "priority": "high",
       "date": "2026-10-05",
-      "done": false,
+      "done": true,
       "createdAt": "2026-10-05T14:38:45.526Z"
     },
     {
       "id": "77c69865-f3d5-4554-bea7-7096e1d25a99",
       "title": "Evaluation test set and tracing",
-      "description": "10–20 payslips (redacted or synthetic) with the correct JSON, to score prompt and model changes. Tracing with LangSmith or Langfuse.",
+      "description": "Tracing works (LangSmith, synthetic documents only; switched off in tests). Left: a test set of 10\u201320 documents with hand-checked gold standards (scripts/make_gold.py, evaluate.py). Plan: Boardy's onboarding produces each client's test set from their sample documents.",
       "type": "feature",
       "priority": "high",
       "date": "2026-10-05",
@@ -134,7 +134,7 @@
     {
       "id": "96eb57cb-6079-4112-955a-65dba9932ae5",
       "title": "Prompt injection defences",
-      "description": "Emails are untrusted input. Treat content as data, no outbound tools for Obed, destinations only from configuration. Add injection attempts to the test set.",
+      "description": "Partly done: Obed's system rules say the inputs are data, never instructions; Obed has no tools; destinations come only from configuration. Left: documents with planted instructions in the test set, and checking how well each model resists them.",
       "type": "feature",
       "priority": "high",
       "date": "2026-10-05",
@@ -154,7 +154,7 @@
     {
       "id": "e2328afc-2acb-48ba-b5a8-b1a3fc19746a",
       "title": "Swappable models per agent",
-      "description": "LangChain's chat-model interface with provider:model strings, set per agent in App Config (BACKEND:OBED_MODEL, BACKEND:JUSTICE_MODEL). Hugging Face is one possible provider; check structured-output support, document reading and cost. Use the test set to compare models.",
+      "description": "Done for Obed: the model comes from AGENTS:OBED_MODEL (any provider with structured output). Left: a model catalogue per agent and task type, combined with the per-region catalogue for data residency.",
       "type": "feature",
       "priority": "medium",
       "date": "2026-10-05",
@@ -174,9 +174,9 @@
     {
       "id": "05bd17f6-8d94-4dc5-aa4f-072da44ac609",
       "title": "Boardy: onboarding chat agent",
-      "description": "Roadmap step 7. Conversation in the frontend that produces the client configuration (structured, versioned, approved by the client, not a free-text prompt). LangGraph interrupt, checkpointer, streaming. Must ask about every configurable option rather than assume Rolepay's: document types, rules, analyses, case matching, client references, case closing period, destinations, retry limits, intake. See 'What Boardy asks about' in Planner.md.",
+      "description": "NEXT. The first agent with tools: builds a client's configuration through a conversation (add_document_type, add_rule, set_destination, try_on_samples), checked by check_configuration as it goes; tries the draft on the client's sample documents (Obed + rules) and shows the envelopes; produces the client's gold standard; saves a draft that the client approves. LangGraph interrupt, Postgres checkpointer, runs in the backend. Must ask about every configurable option rather than assume Rolepay's. First version: a terminal-driven Boardy that rebuilds Rolepay's configuration.",
       "type": "feature",
-      "priority": "medium",
+      "priority": "high",
       "date": "2026-10-05",
       "done": false,
       "createdAt": "2026-10-05T14:38:45.532Z"
@@ -224,7 +224,7 @@
     {
       "id": "8a9c9b28-e37d-45c3-8ada-94167b2e4a35",
       "title": "Watchdog for stuck events",
-      "description": "Mark events failed (processing_timeout) when stuck in processing too long, e.g. after a worker crash, so the client always hears about every event.",
+      "description": "Needed before a real client relies on the pipeline: a crash leaves an events row in 'processing'. Mark events stuck in processing too long as failed (processing_timeout, not billable) and deliver event.failed, so the client always hears about every event. Runs with the owner's database connection.",
       "type": "feature",
       "priority": "medium",
       "date": "2026-10-05",
@@ -244,7 +244,7 @@
     {
       "id": "476d1c68-0c4d-40a3-ad26-5fbf55918ff8",
       "title": "Delivery tracking, retries and resend",
-      "description": "Delivery status per destination (pending, delivered, retrying, gave_up). Retries with increasing waits over ~24h, then gave_up. Failed events delivered too. Resend button in the dashboard. Retry limits: 3lay defaults, configurable per client.",
+      "description": "Done: delivery status per destination and attempt (deliveries table), retries within the run, client-set retry waits within 3lay's limits, failed events delivered too. Left: the resend button in the dashboard (and a resend for deliveries that gave up).",
       "type": "feature",
       "priority": "medium",
       "date": "2026-10-05",
@@ -264,7 +264,7 @@
     {
       "id": "d0cc1837-b890-4f86-879a-85d8329c5b87",
       "title": "Configuration versions and approval",
-      "description": "Client account (status, billing plan, monthly cap, active version) separate from immutable configuration versions: intake, document_types, analyses, judging, destinations, processing. draft → approved → active; one active version; every event records its version. Model choice and secrets stay out of it. See Planner.md step 1.",
+      "description": "Done (E4): client_configurations with versions, one active per client, check_configuration, events record their config_version; secrets outside the configuration. Left: the draft \u2192 approved \u2192 active approval step (comes with Boardy and the dashboard).",
       "type": "feature",
       "priority": "high",
       "date": "2026-10-05",
@@ -284,7 +284,7 @@
     {
       "id": "0e749cbc-1772-49da-8003-5d4173adb6f5",
       "title": "Orchy: classify attachments into document types",
-      "description": "Orchy's one LLM step: each attachment → one of the client's document types (by its description), or unknown → rejected item (not_a_relevant_document). Then fan out one branch per document (LangGraph fan-out / fan-in).",
+      "description": "Orchy's one LLM step: each attachment \u2192 one of the client's document types (by its description), or unknown \u2192 rejected item (not_a_relevant_document). Then fan out one branch per document (LangGraph fan-out / fan-in).",
       "type": "feature",
       "priority": "high",
       "date": "2026-10-05",
@@ -304,7 +304,7 @@
     {
       "id": "e03591d4-568a-4418-b8da-bd23dcf52863",
       "title": "Billing per event and monthly cap",
-      "description": "Bill completed events and sender-caused failures; not 3lay-caused failures; reprocessing only when the client asks. Plans priced on events per month and documents per event, plus a maximum attachments setting. Monthly event cap: warn the client at 80% (email and dashboard); when reached, bounce new emails with a reason (not billed).",
+      "description": "Done: events.billable follows the policy (completed and sender-caused failures billed; processing_error / processing_timeout not). Left: plans priced on events per month and documents per event, the monthly cap with a warning at 80% and bouncing at the Worker when reached.",
       "type": "feature",
       "priority": "high",
       "date": "2026-10-05",
@@ -360,6 +360,16 @@
       "date": "2026-10-06",
       "done": false,
       "createdAt": "2026-10-06T19:04:53.696Z"
+    },
+    {
+      "id": "de83546a-7078-4861-8b88-d9d45097fdcf",
+      "title": "Delete personal data after 90 days",
+      "description": "Needed before a real client relies on the pipeline. A job (owner's connection, not agents_pipeline) that, for events past personal_data_expires_at, clears the envelope and sender and the sources' extraction and checks, keeping statuses, counts, timings, tokens and billable. Also decide how long raw emails in Blob Storage are kept (a lifecycle rule).",
+      "type": "feature",
+      "priority": "high",
+      "date": "2026-10-13",
+      "done": false,
+      "createdAt": "2026-10-13T14:24:05.109+00:00"
     }
   ]
 }

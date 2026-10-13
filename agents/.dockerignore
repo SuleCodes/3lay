@@ -1,0 +1,18 @@
+# Keep secrets, local data and dev tooling out of the image and the build
+# upload. `az acr build` uploads this whole folder as the build context first;
+# tmp/ holds real-ish documents and runs, so it must never be uploaded.
+.env
+.env.*
+.venv/
+tmp/
+tests/
+scripts/
+evaluation/
+**/__pycache__/
+*.pyc
+.pytest_cache/
+.vscode/
+pytest.ini
+README.md
+DEPLOY.md
+deploy/

@@ -119,8 +119,10 @@ removes, in this order:
    `<forwarding_address>/` in the ingest storage container. This runs first:
    if it fails, nothing else has been touched and the user can retry, and it
    avoids leaving documents behind with no account to delete them from.
-2. **The database rows, in one transaction:** the user, their API keys
-   (cascade) and their sign-in tokens.
+2. **The database rows, in one transaction:** the user, their sign-in
+   tokens, and, by cascade, their API keys, configurations, destination
+   signing secrets and event records (events with their sources, steps and
+   deliveries).
 3. **The session:** the cookie is cleared. Sessions on other devices stop
    working on their next request.
 
@@ -143,8 +145,8 @@ The backend needs access to the ingest storage account for this:
 `BACKEND:INGEST_STORAGE_ACCOUNT_NAME` for managed identity) and
 `BACKEND:RAW_CONTAINER_NAME`. These duplicate the function's `FUNCTION:`
 values, so **update both if the storage key is rotated**. Queue messages
-already waiting for the deleted client aren't removed. A job processor
-should treat a missing blob as "deleted, skip".
+already waiting for the deleted client aren't removed: the ingest job finds
+their email gone and skips them (`agents/jobs/ingest.py`).
 
 ## Database
 
@@ -180,7 +182,7 @@ Supabase project's database already contains several:
 
 | Schema | Owned by | What's in it |
 |---|---|---|
-| **`app`** | **Us** | All of 3lay's tables: `users`, `api_keys`, `magic_link_tokens`, and Alembic's `alembic_version`. |
+| **`app`** | **Us** | All of 3lay's tables: `users`, `api_keys`, `magic_link_tokens`, `retired_usernames`; the agents' `client_configurations`, `destination_secrets`, `events`, `event_sources`, `event_steps`, `deliveries`; and Alembic's `alembic_version`. |
 | `public` | Supabase default | Empty for us. **Don't put 3lay tables here.** |
 | `auth`, `storage`, `realtime`, `extensions`, ... | Supabase | Supabase's own features. Never modify these. |
 
@@ -410,7 +412,8 @@ still in the registry. If a migration has to be undone too, see
 
 ### What the container host needs
 
-This is the next step: creating the app in Azure that runs this image.
+It runs as the Container App `ca-3lay-api`, at `https://api.3lay.live`. What it
+needs, for reference when recreating or changing it:
 
 - **Image:** `containerreg3lay.azurecr.io/3lay-backend:<tag>`, with target port
   **8000** and external HTTPS ingress.
@@ -427,5 +430,6 @@ This is the next step: creating the app in Azure that runs this image.
 - **Config to update for the deployed URLs:** `BACKEND:FRONTEND_URL` (magic
   links and CORS) must be the deployed frontend's URL, e.g.
   `https://app.3lay.live`.
-- **Before going live:** the session cookie needs `secure=True` once it's
-  served over HTTPS (see the TODO in `app/routers/auth.py`).
+- **Secure cookie:** automatic. The session cookie is marked `secure`
+  whenever `BACKEND:FRONTEND_URL` is https (`session_cookie_options` in
+  `app/security.py`).

@@ -1,0 +1,50 @@
+# The ingest job's definition, for `az containerapp job create --yaml`.
+# A template: DEPLOY.md step 7 fills in the placeholders (capitals between
+# double underscores) into a temporary copy, which holds the App Configuration
+# connection string, so it's written outside the repo and deleted straight
+# after. Never commit a filled-in copy.
+location: uksouth
+identity:
+  type: UserAssigned
+  userAssignedIdentities:
+    __IDENTITY_ID__: {}
+properties:
+  environmentId: __ENVIRONMENT_ID__
+  configuration:
+    triggerType: Event
+    replicaTimeout: 1800        # 30 minutes per execution
+    replicaRetryLimit: 0        # the queue retries, not Container Apps
+    eventTriggerConfig:
+      replicaCompletionCount: 1
+      parallelism: 1
+      scale:
+        minExecutions: 0        # scales to zero
+        maxExecutions: 5
+        pollingInterval: 30     # seconds between queue checks
+        rules:
+          - name: ingest-queue
+            type: azure-queue
+            metadata:
+              accountName: __STORAGE__
+              queueName: __QUEUE__
+              queueLength: "1"
+            # The trigger checks the queue with the job's identity: no storage key stored.
+            identity: __IDENTITY_ID__
+    registries:
+      - server: __ACR__.azurecr.io
+        identity: __IDENTITY_ID__
+    secrets:
+      - name: app-config
+        value: __APPCONFIG_CS__
+  template:
+    containers:
+      - name: orchy
+        image: __ACR__.azurecr.io/3lay-agents:latest
+        resources:
+          cpu: 0.5
+          memory: 1Gi
+        env:
+          - name: APP_CONFIG_CONNECTION_STRING
+            secretRef: app-config
+          - name: AZURE_CLIENT_ID     # which identity DefaultAzureCredential uses
+            value: __CLIENT_ID__
