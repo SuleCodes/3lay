@@ -9,19 +9,19 @@ import base64
 from datetime import datetime, timedelta, timezone
 
 import pytest
-from sqlalchemy import create_engine, event, select
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.pool import StaticPool
 
+from conftest import ENCRYPTION_KEY
 from noti import destinations as noti_destinations
 from store import db
 from store.configurations import (ConfigurationNotFound, check_configuration,
                                   load_active_configuration, run_settings, save_configuration)
-from store.db import client_configurations, destination_secrets, metadata, users
+from store.db import client_configurations, destination_secrets
 from store.secret_box import SecretBoxError, decrypt, encrypt, generate_key
 from store.secrets import create_or_rotate_secret, has_secret, signing_secrets
 
-KEY = generate_key()
+KEY = ENCRYPTION_KEY
 
 CONFIG = {
     "processing": {"max_attempts": 2},
@@ -39,24 +39,9 @@ CONFIG = {
 
 
 @pytest.fixture
-def engine(monkeypatch):
-    """An in-memory database with the pipeline's tables and two clients."""
-    eng = create_engine("sqlite://", poolclass=StaticPool,
-                        connect_args={"check_same_thread": False})
-
-    @event.listens_for(eng, "connect")
-    def attach_app_schema(connection, _record):
-        connection.execute("ATTACH DATABASE ':memory:' AS app")
-
-    metadata.create_all(eng)
-    with eng.begin() as connection:
-        connection.execute(users.insert(), [
-            {"id": "u1", "email": "ops@rolepay.example", "username": "rolepay-agent"},
-            {"id": "u2", "email": "ops@other.example", "username": "other-client"},
-        ])
-    monkeypatch.setenv("SECRETS_ENCRYPTION_KEY", KEY)
-    monkeypatch.setenv("SECRETS_ENCRYPTION_KEY_VERSION", "1")
-    return eng
+def engine(database):
+    """The shared in-memory database (tests/conftest.py)."""
+    return database
 
 
 # Encryption
@@ -239,7 +224,7 @@ def test_a_destination_id_cant_be_taken_over_by_another_client(engine):
 
 
 def test_no_secret_means_nothing_to_sign_with(engine):
-    assert signing_secrets(engine, "dest_unknown") == []
+    assert not signing_secrets(engine, "dest_unknown")
     assert not has_secret(engine, "dest_unknown")
 
 

@@ -446,6 +446,28 @@ Decisions:
 - **Data lives in Supabase eu-west-1 (Ireland),** which suits UK GDPR and an
   EU data residency option.
 
+**E5 decisions** (agreed 2026-10-12; migration `8d3f6b1e4a27`, `agents/store/events.py`,
+`agents/orchy/runner.py`):
+- **Tables:** `events` (one row per run), `event_sources` (one per input: an
+  attachment today, audio or other formats later; named for that reason),
+  `event_steps`, `deliveries`. All deleted with the client.
+- **Written at the start and at the end:** the run is recorded as
+  `processing` before the graph runs, and completed in one transaction after
+  it. A crash leaves a `processing` row for the watchdog.
+- **Duplicates are skipped:** `event_id` + `run` is unique; a queue message
+  delivered twice is recognised at the start and not run again (no second
+  webhook, no second bill).
+- **`billable`** follows the billing policy: completed events and
+  sender-caused failures are billed; `processing_error` and
+  `processing_timeout` aren't.
+- **Personal data is kept for 90 days** (`personal_data_expires_at`, from when
+  the event was received): then the envelope, sender, and the sources'
+  extractions and checks are deleted by a later job. Statuses, counts,
+  timings, tokens and billable are kept.
+- **One runner for local and deployed runs:** `orchy/runner.py`'s
+  `process_event` loads the configuration, records the start, runs the graph
+  and records the outcome; `run_orchy.py` uses it now, the queue job (E6) will.
+
 Tables this implies (E4/E5): `client_configurations` (one row per version,
 destinations inside), `destination_secrets`, `events`, `event_steps`,
 `deliveries` (one row per attempt, by destination ID). `events` stores the

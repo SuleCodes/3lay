@@ -12,8 +12,12 @@ from types import SimpleNamespace
 import httpx
 import pymupdf
 import pytest
+from sqlalchemy import create_engine, event
+from sqlalchemy.pool import StaticPool
 
 from orchy import nodes
+from store.db import metadata, users
+from store.secret_box import generate_key
 
 os.environ["LANGSMITH_TRACING"] = "false"
 for _name in ("DATABASE_URL", "ADMIN_DATABASE_URL", "APP_CONFIG_CONNECTION_STRING"):
@@ -91,3 +95,36 @@ def fake_model(monkeypatch):
         return calls
 
     return set_answers
+
+
+ENCRYPTION_KEY = generate_key()
+
+
+@pytest.fixture
+def database(monkeypatch):
+    """An in-memory SQLite database with the pipeline's tables and two clients.
+
+    SQLite stands in for Postgres: the "app" schema is an attached database,
+    and the tables come from store/db.py (the real ones from the backend's
+    migrations). Also sets an encryption key for destination secrets.
+    """
+    engine = create_engine("sqlite://", poolclass=StaticPool,
+                           connect_args={"check_same_thread": False})
+
+    @event.listens_for(engine, "connect")
+    def attach_app_schema(connection, _record):
+        connection.execute("ATTACH DATABASE ':memory:' AS app")
+
+    @event.listens_for(engine, "connect")
+    def enforce_foreign_keys(connection, _record):
+        connection.execute("PRAGMA foreign_keys = ON")
+
+    metadata.create_all(engine)
+    with engine.begin() as connection:
+        connection.execute(users.insert(), [
+            {"id": "u1", "email": "ops@rolepay.example", "username": "rolepay-agent"},
+            {"id": "u2", "email": "ops@other.example", "username": "other-client"},
+        ])
+    monkeypatch.setenv("SECRETS_ENCRYPTION_KEY", ENCRYPTION_KEY)
+    monkeypatch.setenv("SECRETS_ENCRYPTION_KEY_VERSION", "1")
+    return engine

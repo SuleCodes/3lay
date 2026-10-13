@@ -57,23 +57,32 @@ Also used:
 The tables are created by the backend's migrations; the pipeline only reads
 and writes them.
 
-**1. Apply the backend migration** (adds `client_configurations` and
-`destination_secrets`), from `backend/`:
+**1. Apply the backend migrations** (`client_configurations`,
+`destination_secrets`, and the event records: `events`, `event_sources`,
+`event_steps`, `deliveries`), from `backend/`:
 
 ```powershell
 .venv\Scripts\python -m alembic upgrade head
 ```
 
-**2. Create the pipeline's database role.** It can read only what it needs:
-usernames, configurations and secrets (E5 will add writing event records). In
-the Supabase SQL editor, with a strong password of your own:
+**2. Create the pipeline's database role.** It can only read what it needs
+(usernames, configurations, secrets) and write the event records. In the
+Supabase SQL editor, with a strong password of your own:
 
 ```sql
 create role agents_pipeline with login password 'choose-a-strong-password';
 grant usage on schema app to agents_pipeline;
 grant select (id, username) on app.users to agents_pipeline;
 grant select on app.client_configurations, app.destination_secrets to agents_pipeline;
+
+-- Event records (migration 8d3f6b1e4a27). events is updated when a run
+-- finishes, which needs select too; the rest are only ever added to.
+grant select, insert, update on app.events to agents_pipeline;
+grant insert on app.event_sources, app.event_steps, app.deliveries to agents_pipeline;
 ```
+
+Deleting expired personal data (after 90 days) and the watchdog will run with
+the owner's connection, not this role: it can never delete anything.
 
 Then add `AGENTS:DATABASE_URL` to App Configuration: the session pooler
 connection string with that role, ideally as a Key Vault reference. Supabase's

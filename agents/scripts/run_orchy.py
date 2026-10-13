@@ -24,7 +24,7 @@ import os
 import sys
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 
 AGENTS_DIR = Path(__file__).resolve().parent.parent
@@ -32,12 +32,10 @@ sys.path.insert(0, str(AGENTS_DIR))  # so the packages import when run as a scri
 
 # pylint: disable=wrong-import-position
 from noti.destinations import check_destinations  # noqa: E402
-from orchy.emails import read_recipient  # noqa: E402
-from orchy.graph import build_graph  # noqa: E402
+from orchy.runner import client_from_email, process_event  # noqa: E402
 from rules import check_rule_definitions  # noqa: E402
 from settings import load_settings  # noqa: E402
-from store.configurations import load_active_configuration, run_settings  # noqa: E402
-from store.db import database_configured, engine  # noqa: E402
+from store.db import database_configured  # noqa: E402
 
 FIXTURES_DIR = AGENTS_DIR / "tmp" / "fixtures"
 SCHEMA_PATH = AGENTS_DIR / "tmp" / "schema" / "rolepay-income-statement.v1.json"
@@ -98,18 +96,6 @@ def settings_from_files():
         "destinations": load_destinations(),
         "max_attempts": MAX_ATTEMPTS,
     }
-
-
-def settings_from_database(email_path, client):
-    """The client's active configuration, the client being --client or the email's To address."""
-    if not client:
-        recipient = read_recipient(email_path)
-        if not recipient:
-            sys.exit("The email has no To address: pass --client <username>.")
-        client = recipient.split("@", 1)[0]
-    config, version, _ = load_active_configuration(engine(), client)
-    print(f"Client {client}: configuration version {version} from the database.")
-    return run_settings(config, version)
 
 
 def total_usage(steps):
@@ -190,21 +176,24 @@ def main():
 
     load_settings()
     email_path = email_to_run(args.email)
-    settings = (settings_from_database(email_path, args.client) if database_configured()
-                else settings_from_files())
-
-    initial_state = {
-        "event_id": str(uuid.uuid4()),
-        "run": 1,
-        "received_at": datetime.now(timezone.utc).isoformat(timespec="milliseconds"),
-        "email_path": str(email_path),
-        **settings,
-        "steps": [],
-    }
+    event_id = str(uuid.uuid4())
 
     started = time.perf_counter()
-    final_state = build_graph().invoke(initial_state)
+    if database_configured():
+        # The same path the deployed job takes: configuration from the
+        # database, and the run recorded in the event tables.
+        client = args.client or client_from_email(email_path)
+        print(f"Client {client}: configuration from the database; the run will be recorded.")
+        result = process_event(email_path, event_id=event_id, client=client)
+    else:
+        result = process_event(email_path, event_id=event_id, settings=settings_from_files())
     duration = time.perf_counter() - started
+
+    if result.final_state is None:
+        sys.exit(f"Skipped: {result.skipped_reason}")
+    final_state = result.final_state
+    if result.recorded:
+        print(f"Recorded as event {event_id} run 1 in the event tables.")
 
     run_path = save_run(email_path, final_state, os.environ["OBED_MODEL"], duration)
     print(f"Saved run to {run_path}")

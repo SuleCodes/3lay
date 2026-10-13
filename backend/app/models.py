@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, String, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -142,3 +142,126 @@ class DestinationSecret(Base):
     prefix: Mapped[str] = mapped_column(String, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     rotated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+# Event records, written by the agents' pipeline (agents/store/events.py) and
+# read by the dashboard. One Event row per run of an event; its sources, steps
+# and delivery attempts hang off it and are deleted with it.
+
+class Event(Base):
+    """One run of one event (an email, later other inputs).
+
+    Created as "processing" when the run starts and completed in one
+    transaction when it ends, so a crash leaves a "processing" row for the
+    watchdog rather than no trace. event_id + run is unique: a queue message
+    delivered twice is recognised and skipped.
+
+    Personal data (envelope, sender, and the sources' extractions and checks)
+    is deleted after personal_data_expires_at (90 days by default); statuses,
+    counts, timings, tokens and billable are kept for billing and metrics.
+    """
+
+    __tablename__ = "events"
+    __table_args__ = (
+        Index("uq_events_event_id_run", "event_id", "run", unique=True),
+        Index("ix_app_events_user_received", "user_id", "received_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    event_id: Mapped[str] = mapped_column(String, nullable=False)
+    run: Mapped[int] = mapped_column(Integer, nullable=False)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"),
+                                         nullable=False, index=True)
+    case_ref: Mapped[str] = mapped_column(String, nullable=False)
+    sender: Mapped[str | None] = mapped_column(String, nullable=True)
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # "processing", then "completed" or "failed".
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    error_code: Mapped[str | None] = mapped_column(String, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(String, nullable=True)
+    config_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    model: Mapped[str | None] = mapped_column(String, nullable=True)
+    input_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    output_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Completed events and failures caused by the sender are billed; failures
+    # caused by 3lay (processing_error, processing_timeout) aren't.
+    billable: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    envelope: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    personal_data_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),
+                                                               nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class EventSource(Base):
+    """One input of an event: today an email attachment (PDF or image), later
+    audio, messages and other formats."""
+
+    __tablename__ = "event_sources"
+    __table_args__ = (
+        Index("uq_event_sources_event_position", "event_pk", "position", unique=True),
+    )
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    event_pk: Mapped[str] = mapped_column(ForeignKey("events.id", ondelete="CASCADE"),
+                                          nullable=False, index=True)
+    position: Mapped[int] = mapped_column(Integer, nullable=False)  # order within the event
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    content_type: Mapped[str] = mapped_column(String, nullable=False)
+    location: Mapped[str | None] = mapped_column(String, nullable=True)
+    forwarded_from: Mapped[str | None] = mapped_column(String, nullable=True)
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False)
+    verdict: Mapped[str | None] = mapped_column(String, nullable=True)
+    error_code: Mapped[str | None] = mapped_column(String, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(String, nullable=True)
+    checks: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    extraction: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
+
+class EventStep(Base):
+    """One step of a run's timeline: a node, and the source it worked on if any."""
+
+    __tablename__ = "event_steps"
+    __table_args__ = (
+        Index("uq_event_steps_event_sequence", "event_pk", "sequence", unique=True),
+    )
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    event_pk: Mapped[str] = mapped_column(ForeignKey("events.id", ondelete="CASCADE"),
+                                          nullable=False, index=True)
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    node: Mapped[str] = mapped_column(String, nullable=False)
+    source_position: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    outcome: Mapped[str] = mapped_column(String, nullable=False)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    finished_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    error: Mapped[str | None] = mapped_column(String, nullable=True)
+    details: Mapped[dict | None] = mapped_column(JSONB, nullable=True)  # model, tokens, counts
+
+
+class Delivery(Base):
+    """One attempt to deliver an event's envelope to one destination.
+
+    Records the exact URL it went to (the configuration's URL can change);
+    never the signing secret or the signature.
+    """
+
+    __tablename__ = "deliveries"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    event_pk: Mapped[str] = mapped_column(ForeignKey("events.id", ondelete="CASCADE"),
+                                          nullable=False, index=True)
+    destination_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    url: Mapped[str] = mapped_column(String, nullable=False)
+    webhook_id: Mapped[str] = mapped_column(String, nullable=False)
+    attempt: Mapped[int] = mapped_column(Integer, nullable=False)
+    # "delivered", "retry" or "gave_up"; the last attempt is the outcome.
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    http_status: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    response_excerpt: Mapped[str | None] = mapped_column(String, nullable=True)
+    error: Mapped[str | None] = mapped_column(String, nullable=True)
+    attempted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    retry_in_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
