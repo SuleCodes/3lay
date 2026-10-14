@@ -117,6 +117,7 @@ class BoardyConversationOut(BaseModel):
     missing: list[str]  # what the configuration still needs
     approved: bool
     saved_version: int | None
+    changes_pending: bool  # changed since it was approved: not live until approved again
     samples: list[BoardySampleOut]
     feedback: str | None
     active_version: int | None  # the client's live configuration, if any
@@ -144,3 +145,28 @@ class BoardyApprovalIn(BaseModel):
 
 class BoardyFeedbackIn(BaseModel):
     text: str = Field(max_length=5000)
+
+
+# Webhooks: the client's live destinations (app/routers/webhooks.py)
+
+
+class WebhookOut(BaseModel):
+    id: str
+    url: str
+    events: list[str]
+    # The non-secret start of the current signing secret, to recognise it; null if it has none yet.
+    secret_prefix: str | None
+    secret_created_at: datetime | None
+    secret_rotated_at: datetime | None
+    # After a rotation, the old secret keeps working (both are sent) until then.
+    previous_secret_expires_at: datetime | None
+
+
+class WebhooksOut(BaseModel):
+    active_version: int | None  # the live configuration the webhooks come from
+    webhooks: list[WebhookOut]
+
+
+class RotatedSecretOut(BaseModel):
+    webhook: WebhookOut
+    secret: str  # shown once

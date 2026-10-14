@@ -26,7 +26,7 @@ class FakeBoardy:
             raise self.error
         return {"status": "ready", "messages": [], "approval": None, "missing": [],
                 "approved": self.approved_version is not None,
-                "saved_version": self.approved_version}
+                "saved_version": self.approved_version, "changes_pending": False}
 
     def view(self, user_id, conversation_id):
         return self._view("view", user_id, conversation_id)

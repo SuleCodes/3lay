@@ -208,6 +208,13 @@ export default function SetupPage() {
           </div>
         )}
 
+        {conversation.changes_pending && !waitingForApproval && (
+          <p className="mt-6 rounded-md border border-amber-900 bg-amber-950/40 p-3 text-sm text-amber-200">
+            You&apos;ve changed your setup since you approved it. The changes aren&apos;t live yet: ask Boardy to submit
+            the updated setup, then approve it.
+          </p>
+        )}
+
         {conversation.activation_pending ? (
           <div className="mt-6 flex items-center justify-between gap-3 rounded-md border border-amber-900 bg-amber-950/40 p-3">
             <p className="text-sm text-amber-200">

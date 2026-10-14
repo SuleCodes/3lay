@@ -3,7 +3,19 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { ApiError, apiFetch } from "@/lib/api";
-import type { ApiKey, ApiKeyCreatedResponse, DeleteAccountResponse, User } from "@/lib/types";
+import type {
+  ApiKey,
+  ApiKeyCreatedResponse,
+  DeleteAccountResponse,
+  RotatedSecret,
+  User,
+  Webhooks,
+} from "@/lib/types";
+
+const EVENT_LABELS: Record<string, string> = {
+  "event.completed": "were processed",
+  "event.failed": "couldn't be processed",
+};
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -18,6 +30,14 @@ export default function DashboardPage() {
   const [copied, setCopied] = useState(false);
   const [addressCopied, setAddressCopied] = useState(false);
 
+  const [webhooks, setWebhooks] = useState<Webhooks | null>(null);
+  const [webhookError, setWebhookError] = useState<string | null>(null);
+  const [confirmingRotate, setConfirmingRotate] = useState<string | null>(null);
+  const [rotating, setRotating] = useState(false);
+  // A new signing secret: shown once, until the page is left.
+  const [newSecret, setNewSecret] = useState<string | null>(null);
+  const [secretCopied, setSecretCopied] = useState(false);
+
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleteConfirmEmail, setDeleteConfirmEmail] = useState("");
   const [deleting, setDeleting] = useState(false);
@@ -26,6 +46,32 @@ export default function DashboardPage() {
   async function loadKeys() {
     const data = await apiFetch<ApiKey[]>("/api-keys");
     setKeys(data);
+  }
+
+  async function loadWebhooks() {
+    try {
+      setWebhooks(await apiFetch<Webhooks>("/webhooks"));
+    } catch (err) {
+      setWebhookError(err instanceof ApiError ? err.message : "Couldn't load your webhooks.");
+    }
+  }
+
+  async function handleRotate(webhookId: string) {
+    setRotating(true);
+    setWebhookError(null);
+    try {
+      const res = await apiFetch<RotatedSecret>(`/webhooks/${encodeURIComponent(webhookId)}/rotate-secret`, {
+        method: "POST",
+      });
+      setNewSecret(res.secret);
+      setSecretCopied(false);
+      setConfirmingRotate(null);
+      await loadWebhooks();
+    } catch (err) {
+      setWebhookError(err instanceof ApiError ? err.message : "Couldn't create a new secret.");
+    } finally {
+      setRotating(false);
+    }
   }
 
   useEffect(() => {
@@ -38,7 +84,7 @@ export default function DashboardPage() {
           return;
         }
         setUser(u);
-        await loadKeys();
+        await Promise.all([loadKeys(), loadWebhooks()]);
       })
       .catch(() => router.replace("/login"))
       .finally(() => setLoading(false));
@@ -146,6 +192,112 @@ export default function DashboardPage() {
             >
               {addressCopied ? "Copied" : "Copy"}
             </button>
+          </div>
+        </section>
+
+        <section className="mt-10">
+          <div className="flex items-center justify-between gap-4">
+            <h2 className="text-sm font-medium text-neutral-300">Webhooks</h2>
+            <button onClick={() => router.push("/setup")} className="text-xs text-neutral-400 hover:text-neutral-200">
+              Change with Boardy
+            </button>
+          </div>
+          <p className="mt-1 text-sm text-neutral-500">
+            Where your results are delivered. Each delivery is signed with the webhook&apos;s secret, so your server
+            can check it came from 3lay.
+            {webhooks?.active_version != null && ` From your live setup (version ${webhooks.active_version}).`}
+          </p>
+
+          {webhookError && <p className="mt-3 text-sm text-red-400">{webhookError}</p>}
+
+          {newSecret && (
+            <div className="mt-4 rounded-md border border-emerald-900 bg-emerald-950/40 p-3">
+              <p className="text-xs text-emerald-300">
+                Your new signing secret. Copy it now &mdash; you won&apos;t be able to see it again. Update your server
+                with it: the previous secret keeps working until the time shown below.
+              </p>
+              <div className="mt-2 flex items-center gap-2">
+                <code className="flex-1 truncate text-sm text-emerald-100">{newSecret}</code>
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(newSecret);
+                    setSecretCopied(true);
+                  }}
+                  className="shrink-0 rounded-md bg-emerald-100 px-3 py-1.5 text-xs font-medium text-emerald-950 hover:bg-white"
+                >
+                  {secretCopied ? "Copied" : "Copy"}
+                </button>
+              </div>
+            </div>
+          )}
+
+          <div className="mt-4 divide-y divide-neutral-900 rounded-md border border-neutral-900">
+            {webhooks && webhooks.webhooks.length === 0 && (
+              <p className="p-4 text-sm text-neutral-500">No webhooks yet. Set up processing with Boardy to add one.</p>
+            )}
+            {webhooks?.webhooks.map((hook) => (
+              <div key={hook.id} className="p-4">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <p className="truncate font-mono text-sm text-neutral-200">{hook.url}</p>
+                    <p className="mt-0.5 text-xs text-neutral-500">
+                      Receives documents that {hook.events.map((e) => EVENT_LABELS[e] ?? e).join(" and ")}
+                    </p>
+                    <p className="mt-0.5 text-xs text-neutral-600">
+                      {hook.secret_prefix ? (
+                        <>
+                          Secret <span className="font-mono">{hook.secret_prefix}&hellip;</span>
+                          {hook.secret_rotated_at
+                            ? ` · rotated ${new Date(hook.secret_rotated_at).toLocaleString()}`
+                            : hook.secret_created_at
+                              ? ` · created ${new Date(hook.secret_created_at).toLocaleDateString()}`
+                              : ""}
+                        </>
+                      ) : (
+                        "No signing secret yet"
+                      )}
+                    </p>
+                    {hook.previous_secret_expires_at && (
+                      <p className="mt-0.5 text-xs text-amber-400">
+                        The previous secret also works until {new Date(hook.previous_secret_expires_at).toLocaleString()}.
+                      </p>
+                    )}
+                  </div>
+                  {confirmingRotate !== hook.id && (
+                    <button
+                      onClick={() => setConfirmingRotate(hook.id)}
+                      className="shrink-0 rounded-md border border-neutral-800 px-3 py-1.5 text-xs text-neutral-400 hover:border-neutral-600"
+                    >
+                      {hook.secret_prefix ? "Rotate secret" : "Create secret"}
+                    </button>
+                  )}
+                </div>
+                {confirmingRotate === hook.id && (
+                  <div className="mt-3 rounded-md border border-neutral-800 p-3">
+                    <p className="text-xs text-neutral-400">
+                      {hook.secret_prefix
+                        ? "A new secret is created and shown once. The current one keeps working for 24 hours, so you can update your server without missing deliveries."
+                        : "A secret is created and shown once."}
+                    </p>
+                    <div className="mt-2 flex gap-2">
+                      <button
+                        onClick={() => handleRotate(hook.id)}
+                        disabled={rotating}
+                        className="rounded-md bg-neutral-100 px-3 py-1.5 text-xs font-medium text-neutral-900 hover:bg-white disabled:opacity-50"
+                      >
+                        {rotating ? "Creating..." : "Create new secret"}
+                      </button>
+                      <button
+                        onClick={() => setConfirmingRotate(null)}
+                        className="rounded-md border border-neutral-800 px-3 py-1.5 text-xs text-neutral-400 hover:border-neutral-600"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
         </section>
 

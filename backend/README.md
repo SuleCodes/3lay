@@ -462,3 +462,17 @@ here; the conversation itself is saved by LangGraph's checkpointer in the
 `boardy` schema, encrypted. Boardy reads its own settings from App
 Configuration's `AGENTS:*` keys. Setup (once): see agents/README.md, "Boardy".
 
+## Webhooks
+
+`/webhooks` (app/routers/webhooks.py) is the dashboard's Webhooks section: the
+client's live webhooks, from their active configuration.
+
+| Endpoint | Does |
+|---|---|
+| `GET /webhooks` | the live webhooks: URL, events, the secret's non-secret prefix, when it was created or rotated |
+| `POST /webhooks/{id}/rotate-secret` | a new signing secret, returned once; the previous one keeps working for 24 hours (both signatures are sent), so the client can update their server without missing deliveries |
+
+Changing a webhook's URL or events is a new configuration version, so it's
+done with Boardy (`/setup`). Secrets are created and encrypted by the agents'
+secret store (agents/store/secrets.py), with the backend's connection.
+

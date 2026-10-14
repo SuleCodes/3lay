@@ -137,6 +137,7 @@ class Conversations:
         snapshot = self.graph.get_state(thread_config(user_id, conversation_id))
         values = snapshot.values or {}
         question = next((i.value for i in snapshot.interrupts), None)
+        approved = bool((values.get("draft") or {}).get("approved"))
         if question:
             status = "awaiting_approval"
         elif snapshot.next:
@@ -148,8 +149,11 @@ class Conversations:
             "messages": chat_messages(values.get("messages", [])),
             "approval": {"summary": question["summary"]} if question else None,
             "missing": missing(values["draft"]) if values.get("draft") else [],
-            "approved": bool((values.get("draft") or {}).get("approved")),
+            "approved": approved,
             "saved_version": values.get("saved_version"),
+            # Approved earlier, then changed: the changes aren't live until approved
+            # again. Shown by the chat itself, whatever Boardy says.
+            "changes_pending": values.get("saved_version") is not None and not approved,
         }
 
     def send(self, user_id, username, conversation_id, text, samples):

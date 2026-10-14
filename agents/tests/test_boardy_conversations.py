@@ -212,3 +212,23 @@ def test_saved_conversations_are_encrypted(monkeypatch):
 def test_postgres_urls_lose_the_sqlalchemy_driver():
     assert plain_postgres_url("postgresql+psycopg://u:p@h/db") == "postgresql://u:p@h/db"
     assert plain_postgres_url("postgresql://u:p@h/db") == "postgresql://u:p@h/db"
+
+
+def test_a_change_after_approval_is_shown_as_not_live(boardy):
+    conversations, model = boardy
+    model.replies += [say("Hello."), submit(), say("Approved."),
+                      calls(("set_destination", {"url": "https://hooks.example.com/new",
+                                                 "events": ["event.completed"]})),
+                      say("Updated.")]
+    send(conversations, "Hi")
+    conversations.graph.update_state(boardy_graph.thread_config(USER, "c1"),
+                                     {"draft": COMPLETE_DRAFT})
+    send(conversations, "Submit it")
+    approved = conversations.answer_approval(USER, "c1", True)
+    assert approved["changes_pending"] is False
+
+    changed = send(conversations, "Use https://hooks.example.com/new instead")
+
+    assert changed["approved"] is False and changed["saved_version"] == 1
+    assert changed["changes_pending"] is True
+

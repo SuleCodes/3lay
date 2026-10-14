@@ -1,5 +1,5 @@
 {
-  "savedAt": "2026-10-13T21:51:09.938+00:00",
+  "savedAt": "2026-10-14T08:58:10.237+00:00",
   "notes": [
     {
       "id": "0510113e-9eaf-42de-990e-c3ddf80b9fef",
@@ -430,6 +430,16 @@
       "done": false,
       "createdAt": "2026-10-13T21:51:09.938+00:00",
       "description": "The per-conversation lock in agents/boardy/conversations.py is per process. With more than one ca-3lay-api replica, two requests for the same conversation could run turns at once. Fine while there's one replica; if it scales out, use a Postgres advisory lock on the thread id."
+    },
+    {
+      "id": "fae12c45-00ac-4377-bb4a-f46e23f1b65f",
+      "title": "Dashboard: delivery history per webhook",
+      "type": "feature",
+      "priority": "medium",
+      "date": "2026-10-14",
+      "done": false,
+      "createdAt": "2026-10-14T08:58:10.237+00:00",
+      "description": "Deferred from the Webhooks section (2026-10-14). Show each webhook's recent deliveries from app.deliveries: time, HTTP status, attempts and retries, so a client can debug their endpoint. Needs a read endpoint scoped to the client's events, and paging."
     }
   ]
 }

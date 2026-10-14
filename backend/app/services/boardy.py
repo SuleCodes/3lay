@@ -118,3 +118,26 @@ def switch_on(user_id, version):
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=SWITCH_ON_FAILED) from exc
     logger.info("Switched on version %s for %s (%d new secret(s))", version, user_id, len(new_secrets))
     return new_secrets
+
+
+def rotate_secret(user_id, destination_id):
+    """A new signing secret for one of the client's webhooks; returns it, to show once.
+
+    The old secret stays valid for the store's grace period (both signatures
+    are sent meanwhile), so the client can update their server without
+    missing deliveries. Uses the agents' secret store with the backend's
+    connection, like switch_on.
+    """
+    _load_agent_settings()  # SECRETS_ENCRYPTION_KEY
+    # pylint: disable=import-outside-toplevel
+    from app.database import engine
+    from store.secrets import create_or_rotate_secret
+
+    try:
+        secret = create_or_rotate_secret(engine, user_id, destination_id)
+    except Exception as exc:  # pylint: disable=broad-exception-caught
+        logger.exception("Couldn't rotate the secret of %s for %s", destination_id, user_id)
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                            detail="Couldn't create a new secret right now. Try again later.") from exc
+    logger.info("Rotated the secret of %s for %s", destination_id, user_id)
+    return secret

@@ -64,6 +64,8 @@ export interface BoardyConversation {
   missing: string[];
   approved: boolean;
   saved_version: number | null;
+  // Changed since it was approved: not live until approved again.
+  changes_pending: boolean;
   samples: { id: string; name: string }[];
   feedback: string | null;
   // The client's live configuration version, if any.
@@ -73,6 +75,30 @@ export interface BoardyConversation {
   activation_error: string | null;
   // Only in the response that switched the configuration on: show once.
   new_secrets: { destination_id: string; url: string; secret: string }[];
+}
+
+// Webhooks: the client's live destinations (dashboard).
+
+export interface Webhook {
+  id: string;
+  url: string;
+  events: string[];
+  // The non-secret start of the current signing secret; null if it has none yet.
+  secret_prefix: string | null;
+  secret_created_at: string | null;
+  secret_rotated_at: string | null;
+  // After a rotation, the old secret keeps working until then.
+  previous_secret_expires_at: string | null;
+}
+
+export interface Webhooks {
+  active_version: number | null;
+  webhooks: Webhook[];
+}
+
+export interface RotatedSecret {
+  webhook: Webhook;
+  secret: string;
 }
 
 export interface BoardyConversationSummary {

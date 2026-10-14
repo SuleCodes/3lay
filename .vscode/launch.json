@@ -8,7 +8,8 @@
       "type": "debugpy",
       "request": "launch",
       "module": "uvicorn",
-      "args": ["app.main:app", "--reload", "--port", "8000"],
+      // --reload-dir: also restart when the agents package changes (the API runs Boardy from it).
+      "args": ["app.main:app", "--reload", "--reload-dir", ".", "--reload-dir", "../agents", "--port", "8000"],
       "cwd": "${workspaceFolder}/backend",
       "python": "${workspaceFolder}/backend/.venv/bin/python",
       "windows": {
