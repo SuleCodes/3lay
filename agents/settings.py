@@ -42,6 +42,10 @@ def app_configuration(connection_string, key_filter, trim_prefix):
         selects=[SettingSelector(key_filter=key_filter)],
         trim_prefixes=[trim_prefix] if trim_prefix else [],
         keyvault_credential=DefaultAzureCredential(),
+        # How long to keep retrying before giving up (the library's default is
+        # 100 s). The API sets a shorter limit, so a request fails quickly
+        # instead of hanging, e.g. when Key Vault can't be reached.
+        startup_timeout=int(os.environ.get("APP_CONFIG_STARTUP_TIMEOUT", "100")),
     )
     return dict(config.items())
 

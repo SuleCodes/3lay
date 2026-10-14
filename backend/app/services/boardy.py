@@ -34,15 +34,28 @@ def _import_agents():
         sys.path.insert(0, str(AGENTS_DIR))
 
 
+UNAVAILABLE = "Boardy isn't available right now. Try again in a few minutes."
+
+
 def _load_agent_settings():
-    """The AGENTS:* settings, into the environment, once."""
+    """The AGENTS:* settings, into the environment, once.
+
+    If they can't be loaded (e.g. Key Vault references and no identity to read
+    them with), the request fails with a 503 within about 20 seconds instead of
+    hanging, and the next request tries again.
+    """
     global _settings_loaded  # pylint: disable=global-statement
     _import_agents()
     with _lock:
         if not _settings_loaded:
             from settings import load_settings  # pylint: disable=import-outside-toplevel
 
-            load_settings()
+            os.environ.setdefault("APP_CONFIG_STARTUP_TIMEOUT", "20")
+            try:
+                load_settings()
+            except Exception as exc:  # pylint: disable=broad-exception-caught
+                logger.exception("Couldn't load Boardy's settings (AGENTS:*)")
+                raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=UNAVAILABLE) from exc
             _settings_loaded = True
 
 
@@ -55,7 +68,11 @@ def conversations():
             # pylint: disable=import-outside-toplevel
             from boardy.conversations import Conversations, postgres_checkpointer
 
-            _conversations = Conversations(postgres_checkpointer(os.environ["ONBOARDING_DATABASE_URL"]))
+            try:
+                _conversations = Conversations(postgres_checkpointer(os.environ["ONBOARDING_DATABASE_URL"]))
+            except Exception as exc:  # pylint: disable=broad-exception-caught
+                logger.exception("Couldn't start Boardy (its database or conversation key)")
+                raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=UNAVAILABLE) from exc
         return _conversations
 
 

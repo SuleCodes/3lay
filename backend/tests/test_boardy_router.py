@@ -253,3 +253,17 @@ def test_nothing_to_switch_on_is_refused(api, fake, switching):
     assert response.status_code == 409
     assert not switching
 
+
+
+def test_if_boardys_settings_cant_load_the_chat_gets_a_503_not_a_hang(api, monkeypatch):
+    import settings as agent_settings  # pylint: disable=import-outside-toplevel
+
+    def unreachable():
+        raise RuntimeError("Failed to load configurations from endpoint")
+    monkeypatch.setattr(boardy, "_settings_loaded", False)
+    monkeypatch.setattr(agent_settings, "load_settings", unreachable)
+
+    response = api.sign_in("u1").post("/boardy/conversations")
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == boardy.UNAVAILABLE

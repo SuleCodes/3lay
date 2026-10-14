@@ -439,6 +439,13 @@ needs, for reference when recreating or changing it:
 
 ## Boardy, the onboarding chat
 
+**The deployed API needs an identity for Boardy.** Boardy's `AGENTS:*`
+settings include Key Vault references, and its samples are in Blob Storage, so
+`ca-3lay-api` needs a managed identity (system-assigned) with `get` on
+vault3lay's secrets (access policy) and Storage Blob Data Contributor on the
+`onboarding-samples` container. Without it, the chat answers "Boardy isn't
+available right now" (the log says "Failed to load configurations").
+
 `/boardy/conversations` (app/routers/boardy.py) lets a signed-in client set up
 how their documents are processed by chatting with Boardy, the onboarding
 agent. Boardy itself lives in `agents/boardy/` and is imported from there
