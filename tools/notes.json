@@ -1,5 +1,5 @@
 {
-  "savedAt": "2026-10-13T20:16:49.061+00:00",
+  "savedAt": "2026-10-13T21:51:09.938+00:00",
   "notes": [
     {
       "id": "0510113e-9eaf-42de-990e-c3ddf80b9fef",
@@ -400,6 +400,36 @@
       "done": false,
       "createdAt": "2026-10-13T20:16:49.061+00:00",
       "description": "In a real run (2026-10-13) groq called set_schema 23 times in one turn because the $id error message didn't say underscores weren't allowed (fixed: underscores allowed, clearer message). Nothing stops a turn looping like that, and each round costs a model call. Cap the tool rounds per turn (count them in the state; past the limit, the tools node answers 'stop and ask the client' instead of running), rather than LangGraph's recursion_limit, which would stop mid-step and leave tool calls unanswered in the saved conversation."
+    },
+    {
+      "id": "32c7e956-1b71-439e-87d2-9510e3e2cf39",
+      "title": "Boardy: delete conversations, checkpoints and sample blobs",
+      "type": "task",
+      "priority": "high",
+      "date": "2026-10-14",
+      "done": false,
+      "createdAt": "2026-10-13T21:51:09.938+00:00",
+      "description": "Before real clients use the chat. A Boardy conversation leaves three things: the app.boardy_conversations row (deleted with the account by its foreign key), LangGraph's checkpoints in the boardy schema (thread id '<user id>:<conversation id>', encrypted; PostgresSaver.delete_thread removes them) and sample blobs under '<user id>/<conversation id>/' in the onboarding-samples container. Account deletion (backend /account DELETE) and the 90-day retention job must remove the checkpoints and blobs too, not just the row."
+    },
+    {
+      "id": "62e57e48-7369-454e-b187-63d9c2ed0919",
+      "title": "Boardy: stream turns to the chat",
+      "type": "feature",
+      "priority": "medium",
+      "date": "2026-10-14",
+      "done": false,
+      "createdAt": "2026-10-13T21:51:09.938+00:00",
+      "description": "B7 decision 3a (2026-10-14): each message waits for the whole turn (5-30 s with tools). Next: server-sent events from graph.stream(stream_mode='updates') so the chat shows each step as it happens ('reading your sample...'), then token streaming of Boardy's reply."
+    },
+    {
+      "id": "a3f0f2f6-d0dc-4875-8c92-f37caddc0032",
+      "title": "Boardy: one turn at a time across API replicas",
+      "type": "task",
+      "priority": "low",
+      "date": "2026-10-14",
+      "done": false,
+      "createdAt": "2026-10-13T21:51:09.938+00:00",
+      "description": "The per-conversation lock in agents/boardy/conversations.py is per process. With more than one ca-3lay-api replica, two requests for the same conversation could run turns at once. Fine while there's one replica; if it scales out, use a Postgres advisory lock on the thread id."
     }
   ]
 }

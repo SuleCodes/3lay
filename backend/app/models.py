@@ -265,3 +265,28 @@ class Delivery(Base):
     attempted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     retry_in_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+
+class BoardyConversation(Base):
+    """One onboarding conversation with Boardy, the client's onboarding agent.
+
+    The conversation itself (messages, draft) is saved by LangGraph's
+    checkpointer in the "boardy" schema, encrypted, under the thread id
+    "<user_id>:<id>" (agents/boardy/conversations.py). This row is what the API
+    needs around it: who it belongs to, the samples the client uploaded (in
+    Blob Storage, under "<user_id>/<id>/"), and the client's feedback.
+    """
+
+    __tablename__ = "boardy_conversations"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    # Deleting a client deletes these rows (their checkpoints and sample blobs
+    # are removed by the retention job: see tools/notes.json).
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"),
+                                         nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    # [{"id", "name", "content_type", "blob"}], in upload order.
+    samples: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    feedback: Mapped[str | None] = mapped_column(String, nullable=True)
+    feedback_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

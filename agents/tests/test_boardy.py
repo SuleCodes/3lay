@@ -442,7 +442,7 @@ def test_approving_saves_a_draft_and_boardy_carries_on(conversation, database):
     assert result["draft"]["approved"] is True
     assert result["saved_version"] == 1
     assert tool_results(result)[-1].startswith(
-        "The client approved the configuration; saved as draft version 1.")
+        "The client approved the configuration (version 1); it's switched on")
     assert result["messages"][-1].content == "Thanks! 3lay will switch it on."
     assert boardy_graph.pending_question(result) is None
     assert latest_draft(database, USER_ID) == (1, to_configuration(COMPLETE_DRAFT))

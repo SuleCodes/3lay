@@ -296,3 +296,31 @@ def test_only_a_clients_own_draft_can_be_activated(engine):
     with pytest.raises(ConfigurationNotFound):
         activate_configuration(engine, "u2", 2)  # another client's version
 
+
+
+# Switching an approved draft on
+
+def test_switching_on_activates_and_creates_a_secret_once(engine):
+    from store.activation import switch_on  # pylint: disable=import-outside-toplevel
+
+    save_draft(engine, "u1", CONFIG)
+
+    activated, secrets = switch_on(engine, "u1", 1)
+    assert activated is True
+    assert [(s["destination_id"], s["url"]) for s in secrets] == [
+        ("dest_test_main", "https://hooks.example.com/3lay")]
+    assert secrets[0]["secret"].startswith("whsec_")
+    assert statuses(engine, "u1") == {1: "active"}
+
+    assert switch_on(engine, "u1", 1) == (False, [])  # again: nothing new
+
+
+def test_switching_on_keeps_existing_secrets(engine):
+    from store.activation import switch_on  # pylint: disable=import-outside-toplevel
+
+    save_configuration(engine, "rolepay-agent", CONFIG)
+    create_or_rotate_secret(engine, "u1", "dest_test_main")
+    save_draft(engine, "u1", changed(CONFIG, 4))
+
+    assert switch_on(engine, "u1", 2) == (True, [])
+    assert statuses(engine, "u1") == {1: "retired", 2: "active"}

@@ -106,18 +106,21 @@ def thread_config(user_id, conversation_id):
     return {"configurable": {"thread_id": thread_id(user_id, conversation_id)}}
 
 
-def client_message(graph, config, text, *, user_id, username, samples=()):
+def client_message(graph, config, text, *, user_id, username, samples=None):
     """The input for the client's next message.
 
-    A new conversation also needs who it's for, an empty draft and its samples;
-    after that they're in the saved state, and sending the draft again would
-    overwrite it.
+    A new conversation also needs who it's for and an empty draft; after that
+    they're in the saved state, and sending the draft again would overwrite it.
+    samples, if given, replace the conversation's list: the chat sends the
+    current list each turn, since the client can upload more at any time.
     """
     message = {"messages": [HumanMessage(text)]}
+    if samples is not None:
+        message["samples"] = list(samples)
     if graph.get_state(config).values:
         return message
-    return {**message, "user_id": user_id, "username": username, "draft": empty_draft(),
-            "samples": list(samples), "sample_notes": {}, "sample_tries": 0}
+    return {"samples": [], **message, "user_id": user_id, "username": username,
+            "draft": empty_draft(), "sample_notes": {}, "sample_tries": 0}
 
 
 def pending_question(result):

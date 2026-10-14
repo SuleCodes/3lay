@@ -1,4 +1,8 @@
-"""Reviews and activates a client's draft configuration (e.g. one Boardy saved on approval).
+"""Reviews and activates a client's draft configuration, by hand.
+
+Clients normally switch their configuration on themselves, by approving it in
+Boardy's chat. This is for 3lay: to look at a draft, or to activate one if
+switching on failed, or one saved from the terminal (talk_to_boardy.py).
 
     python scripts/activate_configuration.py rolepay-agent             (show the newest draft)
     python scripts/activate_configuration.py rolepay-agent --activate  (then activate it)
@@ -28,10 +32,10 @@ sys.path.insert(0, str(AGENTS_DIR))  # so the packages import when run as a scri
 from sqlalchemy import select  # noqa: E402
 
 from settings import load_settings  # noqa: E402
-from store.configurations import (ConfigurationNotFound, activate_configuration,  # noqa: E402
-                                  check_configuration, latest_draft, user_id_for)
+from store.activation import switch_on  # noqa: E402
+from store.configurations import (ConfigurationNotFound, check_configuration,  # noqa: E402
+                                  latest_draft, user_id_for)
 from store.db import client_configurations, make_engine  # noqa: E402
-from store.secrets import create_or_rotate_secret, has_secret  # noqa: E402
 
 
 def draft_version(engine, user_id, version):
@@ -98,15 +102,13 @@ def main():
     if not args.activate:
         print("\nReviewed only. Add --activate to activate it.")
         return
-    activate_configuration(engine, user_id, version)
+    _, new_secrets = switch_on(engine, user_id, version)
     print(f"\nActivated version {version}; the previous active version is retired.")
-    for destination in config["destinations"]:
-        if has_secret(engine, destination["id"]):
-            print(f"  {destination['id']}: kept its existing signing secret")
-            continue
-        secret = create_or_rotate_secret(engine, user_id, destination["id"])
-        print(f"  {destination['id']}: new signing secret (shown once; pass it to the client):")
-        print(f"    {secret}")
+    for new in new_secrets:
+        print(f"  {new['destination_id']}: new signing secret (shown once; pass it to the client):")
+        print(f"    {new['secret']}")
+    if not new_secrets:
+        print("  Every webhook kept its existing signing secret.")
 
 
 if __name__ == "__main__":

@@ -269,6 +269,8 @@ def submit_draft(summary: str, state: Annotated[dict, InjectedState],
                  tool_call_id: Annotated[str, InjectedToolCallId]) -> Command:
     """Ask the client to approve their finished configuration.
 
+    Approving switches it on straight away: documents sent to their address
+    from then on are processed with it (replacing any configuration they had).
     Call it on its own (no other tools in the same step), once show_draft says
     the configuration is complete and you've talked the client through it.
     summary: what was set up, in plain words; the client sees it with the
@@ -304,8 +306,9 @@ def submit_draft(summary: str, state: Annotated[dict, InjectedState],
                                     "approve again in a moment (call submit_draft again).")
     return Command(update={
         "messages": [ToolMessage(
-            f"The client approved the configuration; saved as draft version {version}. It isn't "
-            "active yet: tell them 3lay will review it, switch it on and let them know."
+            f"The client approved the configuration (version {version}); it's switched on as "
+            "soon as this turn ends. Tell them it's approved and live, and that if their webhook "
+            "is new, its signing secret appears once on screen to copy (you never see it)."
             + (f" Their comments: {comments}" if comments else ""), tool_call_id=tool_call_id)],
         "draft": {APPROVED: True},
         "saved_version": version})
@@ -344,10 +347,16 @@ def read_sample(sample_id: str, state: Annotated[dict, InjectedState],
     if known:
         return result(tool_call_id, from_document(sample, known))
 
+    try:
+        inputs = sample_inputs(sample)
+    except Exception as exc:  # pylint: disable=broad-exception-caught
+        # A local file or a blob (Azure's own exceptions): either way, it can't be read now.
+        return result(tool_call_id, f"Couldn't open {sample_id}: {type(exc).__name__}. "
+                                    "Try again later, or carry on without it.")
     model, _ = orchy_nodes.obed_model()
     try:
-        reply = model.invoke(build_messages(READ_SAMPLE_INSTRUCTIONS, sample_inputs(sample)))
-    except (openai.APIError, OSError, ValueError) as exc:
+        reply = model.invoke(build_messages(READ_SAMPLE_INSTRUCTIONS, inputs))
+    except openai.APIError as exc:
         return result(tool_call_id, f"Couldn't read {sample_id}: {type(exc).__name__}. "
                                     "Try again later, or carry on without it.")
     text = reply.text

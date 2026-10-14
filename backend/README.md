@@ -350,13 +350,16 @@ host, such as Azure Container Apps, pulls the image from there and runs it.
 | Health check | `GET /health` → `{"status": "ok"}` |
 | Config | **Only** the `APP_CONFIG_CONNECTION_STRING` env var. Everything else comes from App Configuration at startup. |
 
-No `.env`, venv or local database goes into the image (`.dockerignore`), so
-the image contains no secrets.
+No `.env`, venv or local database goes into the image (the repo root's
+`.dockerignore`), so the image contains no secrets. The image also contains the
+`agents/` package (without its `tmp/`, tests or scripts), because the API runs
+Boardy, the onboarding agent (see [Boardy](#boardy-the-onboarding-chat)).
 
 ### Build and push
 
-Docker isn't needed locally. `az acr build` uploads this folder (minus
-`.dockerignore`) and builds the image in Azure. From `backend/`:
+Docker isn't needed locally. `az acr build` uploads the build context (minus
+the root `.dockerignore`) and builds the image in Azure. Run it from the
+**repo root**, not `backend/`, so the agents package is included:
 
 1. Log in. The account needs push rights on the registry (AcrPush, or
    Owner/Contributor):
@@ -368,7 +371,7 @@ Docker isn't needed locally. `az acr build` uploads this folder (minus
 2. Build and push, tagged with the current UTC time and as `latest`:
 
    ```bash
-   az acr build --registry containerreg3lay --image 3lay-backend:$(date -u +%Y%m%d-%H%M) --image 3lay-backend:latest --no-logs .
+   az acr build --registry containerreg3lay --image 3lay-backend:$(date -u +%Y%m%d-%H%M) --image 3lay-backend:latest --no-logs -f backend/Dockerfile .
    ```
 
    In PowerShell, use `$(Get-Date -AsUTC -Format yyyyMMdd-HHmm)` for the tag
@@ -433,3 +436,29 @@ needs, for reference when recreating or changing it:
 - **Secure cookie:** automatic. The session cookie is marked `secure`
   whenever `BACKEND:FRONTEND_URL` is https (`session_cookie_options` in
   `app/security.py`).
+
+## Boardy, the onboarding chat
+
+`/boardy/conversations` (app/routers/boardy.py) lets a signed-in client set up
+how their documents are processed by chatting with Boardy, the onboarding
+agent. Boardy itself lives in `agents/boardy/` and is imported from there
+(app/services/boardy.py), so `requirements.txt` includes the agents'
+requirements, and the image includes `agents/`.
+
+| Endpoint | Does |
+|---|---|
+| `GET /boardy/conversations` | the client's conversations, newest first |
+| `POST /boardy/conversations` | starts one |
+| `GET /boardy/conversations/{id}` | the conversation as the chat shows it |
+| `POST .../{id}/messages` `{text}` | runs one Boardy turn (seconds: it may use its tools) |
+| `POST .../{id}/approval` `{approved, comments}` | answers Boardy's approval question. Approving is the client's explicit confirmation: the configuration is switched on straight away, and signing secrets for new webhooks come back once in this response |
+| `POST .../{id}/activate` | switches on an approved configuration if that step failed |
+| `POST .../{id}/retry` | carries on a turn that failed part-way |
+| `POST .../{id}/samples` (file) | adds a sample document (Blob Storage) |
+| `PUT .../{id}/feedback` `{text}` | the client's feedback on the conversation |
+
+A conversation's row (`boardy_conversations`: owner, samples, feedback) is
+here; the conversation itself is saved by LangGraph's checkpointer in the
+`boardy` schema, encrypted. Boardy reads its own settings from App
+Configuration's `AGENTS:*` keys. Setup (once): see agents/README.md, "Boardy".
+

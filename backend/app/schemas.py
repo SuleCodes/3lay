@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 
 
 class RequestLinkIn(BaseModel):
@@ -80,3 +80,67 @@ class UsernameClaimedOut(BaseModel):
     user: UserOut
     # The user's first API key. The raw `key` is shown this once only.
     api_key: ApiKeyCreatedOut
+
+
+# Boardy, the onboarding agent (app/routers/boardy.py)
+
+
+class BoardyMessageOut(BaseModel):
+    role: str  # "client" or "boardy"
+    text: str
+    steps: list[str]  # what Boardy did before this reply, in plain words
+
+
+class BoardyApprovalOut(BaseModel):
+    summary: str
+
+
+class BoardySampleOut(BaseModel):
+    id: str
+    name: str
+
+
+class BoardySecretOut(BaseModel):
+    destination_id: str
+    url: str
+    secret: str  # shown once, when the configuration is switched on
+
+
+class BoardyConversationOut(BaseModel):
+    id: str
+    created_at: datetime
+    # "ready" (waiting for the client), "awaiting_approval", or "failed" (the
+    # last turn didn't finish: retry it).
+    status: str
+    messages: list[BoardyMessageOut]
+    approval: BoardyApprovalOut | None
+    missing: list[str]  # what the configuration still needs
+    approved: bool
+    saved_version: int | None
+    samples: list[BoardySampleOut]
+    feedback: str | None
+    active_version: int | None  # the client's live configuration, if any
+    # Approved in this conversation but not switched on yet (it failed): "Switch on" retries.
+    activation_pending: bool
+    activation_error: str | None = None
+    # Only in the response that switched the configuration on: secrets for new webhooks.
+    new_secrets: list[BoardySecretOut] = []
+
+
+class BoardyConversationSummaryOut(BaseModel):
+    id: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class BoardyMessageIn(BaseModel):
+    text: str = Field(min_length=1, max_length=4000)
+
+
+class BoardyApprovalIn(BaseModel):
+    approved: bool
+    comments: str = Field(default="", max_length=2000)
+
+
+class BoardyFeedbackIn(BaseModel):
+    text: str = Field(max_length=5000)

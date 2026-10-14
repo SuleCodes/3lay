@@ -114,6 +114,22 @@ export default function DashboardPage() {
           </button>
         </div>
 
+        <section className="mt-10 flex items-center justify-between gap-4 rounded-md border border-neutral-800 p-4">
+          <div>
+            <h2 className="text-sm font-medium text-neutral-300">Set up processing</h2>
+            <p className="mt-1 text-sm text-neutral-500">
+              Chat with Boardy, our onboarding assistant, to set up how your documents are read, checked and
+              delivered.
+            </p>
+          </div>
+          <button
+            onClick={() => router.push("/setup")}
+            className="shrink-0 rounded-md bg-neutral-100 px-3 py-1.5 text-sm font-medium text-neutral-900 hover:bg-white"
+          >
+            Open
+          </button>
+        </section>
+
         <section className="mt-10">
           <h2 className="text-sm font-medium text-neutral-300">Forwarding address</h2>
           <p className="mt-1 text-sm text-neutral-500">

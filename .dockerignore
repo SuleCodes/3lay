@@ -1,0 +1,30 @@
+# For builds whose context is the repo root: the backend image
+# (docker/az acr build -f backend/Dockerfile .), which includes the agents
+# package because the API runs Boardy. `az acr build` uploads the whole context
+# first, so everything not needed stays out, above all secrets and
+# agents/tmp/, which holds real-ish documents and must never be uploaded.
+# (The agents job image builds from agents/ with agents/.dockerignore.)
+.git/
+.vscode/
+*.code-workspace
+frontend/
+infra/
+tools/
+**/.env
+**/.env.*
+!**/.env.example
+**/.venv/
+**/__pycache__/
+**/*.pyc
+**/*.db
+**/.pytest_cache/
+**/.mypy_cache/
+agents/tmp/
+agents/tests/
+agents/scripts/
+agents/evaluation/
+agents/deploy/
+agents/Dockerfile
+agents/.dockerignore
+backend/tests/
+backend/.dockerignore

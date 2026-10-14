@@ -1,7 +1,8 @@
 # 3lay agents
 
 The agentic pipeline: Orchy (the LangGraph graph), Obed (extraction), the rule
-engine, and Noti (signed webhook delivery). The design and the decisions behind
+engine, and Noti (signed webhook delivery). And Boardy, the onboarding agent a
+client chats with to set up their configuration (run by the backend's API). The design and the decisions behind
 it are in [tools/Planner.md](../tools/Planner.md).
 
 ```
@@ -10,6 +11,7 @@ agents/
   obed/         extraction: documents to image blocks, the model call
   rules/        the generic rule engine (rules are data, from the configuration)
   noti/         delivery: signing, destinations, retries
+  boardy/       onboarding agent: tools, draft, samples, conversations for the API
   store/        the database: configurations, destination secrets (encrypted)
   evaluation/   scoring runs against gold standards, pricing
   scripts/      runners (run_orchy, evaluate, make_email, make_gold, ...)
@@ -47,6 +49,8 @@ and with the job's managed identity when deployed.
 | `AGENTS:HF_TOKEN` | Hugging Face token (Key Vault reference) |
 | `AGENTS:DATABASE_URL` | The pipeline's database connection, as the limited `agents_pipeline` role (below), not the backend's owner role (Key Vault reference). Without it, runs use the configuration in `tmp/` files. |
 | `AGENTS:ONBOARDING_DATABASE_URL` | Boardy's database connection, as the `agents_onboarding` role (below): saves a configuration as a draft when the client approves it (Key Vault reference). |
+| `AGENTS:CONVERSATION_ENCRYPTION_KEY` | Encrypts Boardy's saved conversations (Key Vault reference; `scripts/setup_conversations.py --generate-key`) |
+| `AGENTS:SAMPLES_CONTAINER_NAME` | Optional: the container for samples clients upload to Boardy, in the ingest storage account (default `onboarding-samples`) |
 | `AGENTS:SECRETS_ENCRYPTION_KEY` (+ `_VERSION`) | Encrypts destination signing secrets (Key Vault reference). When the backend shows and rotates secrets, `BACKEND:SECRETS_ENCRYPTION_KEY` points at the same Key Vault secret. |
 | `AGENTS:LANGSMITH_*` | Optional tracing (synthetic documents only) |
 
@@ -135,3 +139,47 @@ New destinations get a signing secret, stored encrypted and printed once.
 ```powershell
 .venv\Scripts\python scripts\run_orchy.py tmp\fixtures\invented.eml
 ```
+
+## Boardy
+
+Boardy is the onboarding agent: a client chats with it (the frontend's
+`/setup`, through the backend's `/boardy/conversations` endpoints) and it
+builds their configuration, reading their sample documents with Obed's model
+and trying the draft on them. When the client approves it (their explicit
+confirmation in the chat), Boardy saves it as a new version with its own
+limited role, and the backend switches it on straight away
+(`store/activation.py`: activates it and creates signing secrets for new
+webhooks, shown once to the client). Boardy never handles secrets.
+
+To look at or activate a draft by hand (e.g. one saved from the terminal):
+
+```powershell
+.venv\Scripts\python scriptsctivate_configuration.py rolepay-agent             # review
+.venv\Scripts\python scriptsctivate_configuration.py rolepay-agent --activate  # then activate
+```
+
+In the terminal, without the API: `scripts/talk_to_boardy.py rolepay-agent
+--samples tmp/samples/invented` (conversations kept in memory).
+
+**Setup, once:**
+
+1. Boardy's database role, `agents_onboarding`, and
+   `AGENTS:ONBOARDING_DATABASE_URL`: step 2b above.
+2. A key for saved conversations: run
+   `scripts\setup_conversations.py --generate-key`, store it in Key Vault and
+   add `AGENTS:CONVERSATION_ENCRYPTION_KEY` as a Key Vault reference to it.
+3. The tables conversations are saved in: LangGraph's own, in the `boardy`
+   schema, created with the backend's connection, which also lets
+   `agents_onboarding` use them. Run it again after upgrading
+   `langgraph-checkpoint-postgres`:
+
+   ```powershell
+   .venv\Scripts\python scripts\setup_conversations.py
+   ```
+
+4. The samples container, `onboarding-samples`, in the ingest storage account.
+   The API's identity (and you, locally) need Storage Blob Data Contributor on
+   it.
+5. The backend's migrations (`boardy_conversations`), from `backend/`:
+   `alembic upgrade head`.
+
