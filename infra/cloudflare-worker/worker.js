@@ -13,6 +13,12 @@
  * Only this Worker holds the function key and the API key, which is what
  * lets the function trust those two headers.
  *
+ * Tracing: this is where each email's trace starts. The Worker makes a W3C
+ * `traceparent` (https://www.w3.org/TR/trace-context/) and sends it to the
+ * backend's recipient check and to the ingest function, which carries it on
+ * to the pipeline. Its trace id is the email's correlation id, from here to the
+ * client's webhook; every log line below includes it.
+ *
  * Bindings (see wrangler.toml):
  *   FUNCTION_URL    var     Base URL of the Function App, e.g. https://func-3lay.azurewebsites.net
  *   FUNCTION_KEY    secret  Azure function key for /api/ingest (`wrangler secret put FUNCTION_KEY`)
@@ -46,11 +52,13 @@ export async function handleEmail(message, env) {
   // and BCC recipients too.
   const client = message.to.toLowerCase();
   const origin = senderAddress(message);
+  const traceparent = newTraceparent();
+  const traceId = traceparent.split("-")[1];
 
   // Only registered clients' addresses are accepted. Anything else is bounced
   // here, before it costs a function call or a byte of storage.
-  if (!(await isKnownRecipient(client, env))) {
-    console.log(`Rejected ${origin} -> ${client}: not a client address`);
+  if (!(await isKnownRecipient(client, env, traceparent))) {
+    console.log(`Rejected ${origin} -> ${client}: not a client address [trace_id=${traceId}]`);
     message.setReject("Address not found");
     return;
   }
@@ -70,18 +78,19 @@ export async function handleEmail(message, env) {
         "x-functions-key": env.FUNCTION_KEY,
         "X-3lay-Api-Key": env.INGEST_API_KEY,
         "Content-Type": "message/rfc822",
+        traceparent,
       },
       body: raw,
     });
   } catch (err) {
     // Transient: don't bounce. Throwing hands the failure back to Email
     // Routing rather than sending the sender a permanent rejection.
-    throw new Error(`Ingest function unreachable: ${err}`);
+    throw new Error(`Ingest function unreachable: ${err} [trace_id=${traceId}]`);
   }
 
   if (upstream.status === 202) {
     const { id } = await upstream.json();
-    console.log(`Ingested ${id}: ${origin} -> ${client} (${raw.byteLength} bytes)`);
+    console.log(`Ingested ${id}: ${origin} -> ${client} (${raw.byteLength} bytes) [trace_id=${traceId}]`);
     return;
   }
 
@@ -89,14 +98,23 @@ export async function handleEmail(message, env) {
   if (upstream.status === 400) {
     // Permanent: an address the function won't accept as a path segment
     // (e.g. unusual characters). Retrying won't help, so bounce it.
-    console.error(`Rejected ${origin} -> ${client}: ${detail}`);
+    console.error(`Rejected ${origin} -> ${client}: ${detail} [trace_id=${traceId}]`);
     message.setReject("Message could not be accepted for processing");
     return;
   }
 
   // 401/403 (our function key or API key is wrong) or 5xx: our problem, not the
   // sender's, so treat as transient rather than bouncing.
-  throw new Error(`Ingest function returned ${upstream.status}: ${detail}`);
+  throw new Error(`Ingest function returned ${upstream.status}: ${detail} [trace_id=${traceId}]`);
+}
+
+/**
+ * A new W3C traceparent: "00-<32 hex trace id>-<16 hex span id>-01" (sampled).
+ */
+function newTraceparent() {
+  const hex = (bytes) =>
+    Array.from(crypto.getRandomValues(new Uint8Array(bytes)), (b) => b.toString(16).padStart(2, "0")).join("");
+  return `00-${hex(16)}-${hex(8)}-01`;
 }
 
 /**
@@ -105,13 +123,13 @@ export async function handleEmail(message, env) {
  * backend down, slow cold start past the timeout, wrong key -- throws, so a
  * problem on our side never bounces a real client's mail.
  */
-async function isKnownRecipient(address, env) {
+async function isKnownRecipient(address, env, traceparent) {
   const url = `${env.BACKEND_URL.replace(/\/+$/, "")}/internal/recipients/${encodeURIComponent(address)}`;
 
   let res;
   try {
     res = await fetch(url, {
-      headers: { "X-3lay-Internal-Key": env.INGEST_API_KEY },
+      headers: { "X-3lay-Internal-Key": env.INGEST_API_KEY, traceparent },
       // Generous: the backend scales to zero, so the first request after an
       // idle spell includes its cold start.
       signal: AbortSignal.timeout(30_000),

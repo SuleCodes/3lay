@@ -32,6 +32,13 @@ COPY backend/migrations ./migrations
 COPY backend/app ./app
 COPY agents /agents
 
+# Datadog: serverless-init wraps the process and sends its traces, logs and
+# metrics to Datadog; ddtrace-run turns on tracing (FastAPI, httpx, SQL,
+# LangChain/LangGraph and LLM Observability). Both are configured by the
+# container's DD_* environment variables (see the README's "Observability");
+# with DD_TRACE_ENABLED unset, nothing is traced and the app runs as before.
+COPY --from=datadog/serverless-init:1 /datadog-init /app/datadog-init
+
 # Don't run as root.
 RUN useradd --create-home --uid 10001 appuser
 USER appuser
@@ -42,4 +49,5 @@ EXPOSE 8000
 # X-Forwarded-* headers for the real scheme and client address.
 # Migrations are NOT run here -- they're a separate deploy step (README), so
 # several replicas starting at once can't race each other on the schema.
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips", "*"]
+ENTRYPOINT ["/app/datadog-init"]
+CMD ["ddtrace-run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips", "*"]

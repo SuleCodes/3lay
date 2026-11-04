@@ -8,6 +8,12 @@ message pointing at that blob. The raw
 payload is the source of truth -- everything downstream (extraction,
 webhooks) reads it from the blob rather than from the queue message, which
 keeps queue messages tiny regardless of how large the input was.
+
+Tracing: the Worker starts each email's trace and sends it as a W3C
+`traceparent` header. This function passes it on in the blob's metadata and
+the queue message (queues have no headers), so the pipeline job continues the
+same trace: one correlation id from the email arriving to the client's
+webhook (agents/observability.py). Without one, it starts the trace itself.
 """
 
 import hmac
@@ -15,6 +21,7 @@ import json
 import logging
 import os
 import re
+import secrets
 import uuid
 from datetime import datetime, timezone
 from functools import lru_cache
@@ -160,6 +167,18 @@ def _path_segment_header(req: func.HttpRequest, header: str) -> str:
     return value
 
 
+TRACEPARENT = re.compile(r"^00-([0-9a-f]{32})-([0-9a-f]{16})-[0-9a-f]{2}$")
+
+
+def _traceparent(req: func.HttpRequest) -> str:
+    """The email's trace: the Worker's traceparent, or a new one if it's missing or invalid."""
+    value = (req.headers.get("traceparent") or "").strip().lower()
+    match = TRACEPARENT.match(value)
+    if match and set(match.group(1)) != {"0"} and set(match.group(2)) != {"0"}:
+        return value
+    return f"00-{secrets.token_hex(16)}-{secrets.token_hex(8)}-01"
+
+
 @app.route(route="ingest", methods=["POST"])
 def ingest(req: func.HttpRequest) -> func.HttpResponse:
     if not _authorized(req):
@@ -176,6 +195,8 @@ def ingest(req: func.HttpRequest) -> func.HttpResponse:
         return _json_response({"error": "Request body is empty"}, 400)
 
     ingest_id = str(uuid.uuid4())
+    traceparent = _traceparent(req)
+    trace_id = traceparent.split("-")[1]  # the correlation id
     received_at = datetime.now(timezone.utc)
     content_type = req.headers.get("content-type", "application/octet-stream")
 
@@ -197,6 +218,7 @@ def ingest(req: func.HttpRequest) -> func.HttpResponse:
                 "client": client,
                 "origin": origin,
                 "received_at": received_at.isoformat(),
+                "traceparent": traceparent,
             },
         )
 
@@ -211,6 +233,7 @@ def ingest(req: func.HttpRequest) -> func.HttpResponse:
                     "content_type": content_type,
                     "size_bytes": len(raw),
                     "received_at": received_at.isoformat(),
+                    "traceparent": traceparent,
                 }
             )
         )
@@ -218,8 +241,9 @@ def ingest(req: func.HttpRequest) -> func.HttpResponse:
         # If the enqueue fails after the upload, the blob is left without a
         # job. That's preferable to the reverse (a job pointing at nothing),
         # and the caller gets a 500 so it knows to retry.
-        logging.exception("Failed to ingest %s", ingest_id)
+        logging.exception("Failed to ingest %s [trace_id=%s]", ingest_id, trace_id)
         return _json_response({"error": "Failed to store payload"}, 500)
 
-    logging.info("Ingested %s for %s from %s (%d bytes)", ingest_id, client, origin, len(raw))
-    return _json_response({"id": ingest_id, "status": "queued"}, 202)
+    logging.info("Ingested %s for %s from %s (%d bytes) [trace_id=%s]",
+                 ingest_id, client, origin, len(raw), trace_id)
+    return _json_response({"id": ingest_id, "status": "queued", "trace_id": trace_id}, 202)

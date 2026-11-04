@@ -36,6 +36,10 @@ properties:
     secrets:
       - name: app-config
         value: __APPCONFIG_CS__
+      # Datadog's API key, read from Key Vault with the job's identity.
+      - name: dd-api-key
+        keyVaultUrl: https://vault3lay.vault.azure.net/secrets/datadog-api-key
+        identity: __IDENTITY_ID__
   template:
     containers:
       - name: orchy
@@ -48,3 +52,29 @@ properties:
             secretRef: app-config
           - name: AZURE_CLIENT_ID     # which identity DefaultAzureCredential uses
             value: __CLIENT_ID__
+          # Datadog tracing (agents/observability.py). ddtrace reads these at
+          # start-up, before App Configuration is loaded, so they're set here.
+          - name: DD_API_KEY
+            secretRef: dd-api-key
+          - name: DD_SITE
+            value: datadoghq.eu
+          - name: DD_SERVICE          # must start with a letter: Datadog drops a leading "3"
+            value: threelay-orchy
+          - name: DD_ENV
+            value: prod
+          - name: DD_TRACE_ENABLED
+            value: "true"
+          - name: DD_LOGS_ENABLED
+            value: "true"
+          - name: DD_LOGS_INJECTION
+            value: "true"
+          - name: DD_LLMOBS_ENABLED
+            value: "1"
+          - name: DD_LLMOBS_ML_APP
+            value: 3lay
+          - name: DD_TRACE_PROPAGATION_STYLE
+            value: tracecontext,datadog
+          # Never add trace headers to outgoing calls: they'd go to the model
+          # provider and to clients' webhooks.
+          - name: DD_HTTPX_DISTRIBUTED_TRACING
+            value: "false"

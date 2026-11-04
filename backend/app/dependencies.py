@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.database import get_db
 from app.models import User
+from app.observability import tag
 from app.security import decode_session_token
 
 settings = get_settings()
@@ -29,6 +30,7 @@ def _build_get_current_user():
         if not user:
             raise _UNAUTHORIZED
 
+        tag(**{"customer.id": user.id})  # every signed-in request's trace is searchable by customer
         return user
 
     return dependency

@@ -4,27 +4,32 @@
 # first, so everything not needed stays out, above all secrets and
 # agents/tmp/, which holds real-ish documents and must never be uploaded.
 # (The agents job image builds from agents/ with agents/.dockerignore.)
-.git/
-.vscode/
+#
+# No trailing "/" on folder rules: `az acr build` ignores such rules when it
+# packs the upload (Docker accepts both), and then uploads everything,
+# frontend/node_modules and agents/tmp included.
+.git
+.vscode
+**/.vscode
 *.code-workspace
-frontend/
-infra/
-tools/
+frontend
+infra
+tools
 **/.env
 **/.env.*
 !**/.env.example
-**/.venv/
-**/__pycache__/
+**/.venv
+**/__pycache__
 **/*.pyc
 **/*.db
-**/.pytest_cache/
-**/.mypy_cache/
-agents/tmp/
-agents/tests/
-agents/scripts/
-agents/evaluation/
-agents/deploy/
+**/.pytest_cache
+**/.mypy_cache
+agents/tmp
+agents/tests
+agents/scripts
+agents/evaluation
+agents/deploy
 agents/Dockerfile
 agents/.dockerignore
-backend/tests/
+backend/tests
 backend/.dockerignore

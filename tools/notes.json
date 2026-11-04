@@ -1,5 +1,5 @@
 {
-  "savedAt": "2026-10-14T08:58:10.237+00:00",
+  "savedAt": "2026-10-30T17:12:17.402+00:00",
   "notes": [
     {
       "id": "0510113e-9eaf-42de-990e-c3ddf80b9fef",
@@ -440,6 +440,36 @@
       "done": false,
       "createdAt": "2026-10-14T08:58:10.237+00:00",
       "description": "Deferred from the Webhooks section (2026-10-14). Show each webhook's recent deliveries from app.deliveries: time, HTTP status, attempts and retries, so a client can debug their endpoint. Needs a read endpoint scoped to the client's events, and paging."
+    },
+    {
+      "id": "a74b1b48-46f7-4227-8f2e-0dbb7283acdb",
+      "title": "Observability: PII redaction and data policies in Datadog",
+      "type": "task",
+      "priority": "high",
+      "date": "2026-10-30",
+      "done": false,
+      "createdAt": "2026-10-30T17:12:17.402+00:00",
+      "description": "Seth chose (2026-10-30) to trace everything for now, personal data included, and learn redaction later. Traces and LLM Observability currently contain prompts, model outputs and extracted values (payslip contents, names, amounts). Before real client volume: decide what may leave for Datadog (EU site), use Datadog Sensitive Data Scanner and/or ddtrace/LLMObs span processors to redact, set retention, and document it for clients with data-residency needs."
+    },
+    {
+      "id": "3a1ee85c-7e61-4783-8210-781b9f902c81",
+      "title": "Observability: spans from the Worker and the ingest Function",
+      "type": "feature",
+      "priority": "low",
+      "date": "2026-10-30",
+      "done": false,
+      "createdAt": "2026-10-30T17:12:17.402+00:00",
+      "description": "Today the Cloudflare Worker starts each email's trace (traceparent) and the Function passes it on, but neither sends spans to Datadog, so traces start at the job (with a missing parent). Options: Datadog's Azure Functions support for the Function; Cloudflare Logpush or an OTLP exporter for the Worker."
+    },
+    {
+      "id": "85885acd-7e28-4b80-8716-ac2b036df6de",
+      "title": "Datadog API key: regenerate after setup",
+      "type": "task",
+      "priority": "high",
+      "date": "2026-10-30",
+      "done": false,
+      "createdAt": "2026-10-30T17:12:17.402+00:00",
+      "description": "The first Datadog API key was pasted into a chat on 2026-10-30. Once tracing works, regenerate it in Datadog (Organization Settings > API Keys), update the Key Vault secret datadog-api-key, and restart ca-3lay-api (the job picks it up on its next execution)."
     }
   ]
 }

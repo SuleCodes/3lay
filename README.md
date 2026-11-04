@@ -183,6 +183,43 @@ migrations.
 
 All of these run in `rg-3lay-prod` (UK South), apart from the database (Supabase, eu-west-1) and the Worker (Cloudflare).
 
+## Observability (Datadog)
+
+Every email and every API request has **one correlation id**: the W3C trace
+id of its trace in Datadog (EU site, `datadoghq.eu`). It starts at the entry
+point and is handed on at every hop:
+
+```
+Email:  Worker (starts it) --traceparent--> ingest Function --traceparent in the queue
+        message--> Orchy job (LangGraph nodes, model calls, SQL) --> client's webhook
+Web:    browser --> API (one trace per request) --> Boardy turns, model calls, SQL
+```
+
+- **Where to find it:** `events.trace_id` for every pipeline run; the
+  `X-Correlation-Id` header on every API response (the chat shows it as
+  "reference: ..." with a server error); `[trace_id=...]` in the Worker's and
+  the Function's logs; `dd.trace_id=...` in the job's and the API's log lines,
+  which links them to their trace in Datadog.
+- **Who sends spans:** the API (`threelay-api`) and the job (`threelay-orchy`) run under
+  `ddtrace-run`, wrapped by Datadog's `serverless-init`, with LLM Observability
+  (`ml_app` 3lay). The Worker and the Function only pass the trace on and log it:
+  they don't send spans yet.
+- **Personal data:** traces and LLM Observability currently include prompts,
+  model outputs and extracted values (a deliberate choice for now; redaction
+  is a planned task).
+- **Turned on by** each container's `DD_*` environment variables (the job's are
+  in `agents/deploy/caj-3lay-orchy.template.yaml`); `DD_API_KEY` comes from Key
+  Vault (`datadog-api-key`). Locally nothing is sent: without
+  `DD_TRACE_ENABLED=true`, the correlation id still works, from the traceparent.
+- **Keep `DD_HTTPX_DISTRIBUTED_TRACING=false`:** otherwise ddtrace adds trace
+  headers to outgoing calls, i.e. to the model provider and clients' webhooks.
+- **Logs are JSON on stdout,** so Datadog reads each line's level (`status`) and
+  trace (`dd.trace_id`). Plain text on stderr would all show as errors. Service
+  names must start with a letter: Datadog turns `3lay-orchy` into `lay-orchy`.
+- **To follow one email or request:** open its trace (APM → Traces, search
+  `trace_id`); the trace's Logs tab shows its log lines from every service.
+- Code: `agents/observability.py`, `backend/app/observability.py`.
+
 ## Running it locally
 
 Use Python 3.10–3.13 for the Python virtual environments: the pinned

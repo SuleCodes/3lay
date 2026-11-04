@@ -18,6 +18,7 @@ graph runs the same way, and nothing is recorded.
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
+from observability import current_trace_id, tag
 from orchy.emails import read_recipient
 from orchy.graph import build_graph
 from store.configurations import load_active_configuration, run_settings
@@ -67,8 +68,10 @@ def process_event(email_path, *, event_id, run=1,  # pylint: disable=too-many-ar
     db = engine()
     client = client or client_from_email(email_path)
     config, version, user_id = load_active_configuration(db, client)
+    tag(**{"customer.id": user_id, "event.run": run, "config.version": version})
     event_pk = start_event(db, event_id=event_id, run=run, user_id=user_id, case_ref=event_id,
-                           received_at=received_at, config_version=version)
+                           received_at=received_at, config_version=version,
+                           trace_id=current_trace_id())
     if event_pk is None:
         return EventRun(None, recorded=False,
                         skipped_reason=f"{event_id} run {run} has already been recorded")

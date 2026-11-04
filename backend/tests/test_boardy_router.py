@@ -267,3 +267,51 @@ def test_if_boardys_settings_cant_load_the_chat_gets_a_503_not_a_hang(api, monke
 
     assert response.status_code == 503
     assert response.json()["detail"] == boardy.UNAVAILABLE
+
+
+# Correlation ids
+
+def test_every_response_carries_a_correlation_id(api):
+    first = api.get("/health")
+    second = api.get("/health")
+
+    ids = [r.headers["X-Correlation-Id"] for r in (first, second)]
+    assert all(len(i) == 32 for i in ids) and ids[0] != ids[1]
+
+
+def test_a_request_continues_the_trace_its_traceparent_started(api):
+    trace = "4bf92f3577b34da6a3ce929d0e0e4736"
+
+    response = api.get("/health", headers={"traceparent": f"00-{trace}-00f067aa0ba902b7-01"})
+
+    assert response.headers["X-Correlation-Id"] == trace
+
+
+def test_the_browser_may_read_the_correlation_id(api):
+    response = api.get("/health", headers={"Origin": "http://localhost:3000"})
+
+    assert "x-correlation-id" in response.headers.get("access-control-expose-headers", "").lower()
+
+
+def test_api_logs_are_json_on_stdout_with_the_requests_correlation_id(capsys):
+    import json  # pylint: disable=import-outside-toplevel
+    import logging  # pylint: disable=import-outside-toplevel
+
+    from app import observability  # pylint: disable=import-outside-toplevel
+
+    observability.configure_logging()
+    trace = "4bf92f3577b34da6a3ce929d0e0e4736"
+    token = observability._correlation_id.set(trace)  # pylint: disable=protected-access
+    try:
+        logging.getLogger("3lay.boardy").info("Switched on version %s", 2)
+        logging.getLogger("uvicorn.error").info("Application startup complete.")
+    finally:
+        observability._correlation_id.reset(token)  # pylint: disable=protected-access
+
+    out, err = capsys.readouterr()
+    lines = [json.loads(line) for line in out.splitlines()]
+    assert err == ""
+    assert [(e["logger.name"], e["status"], e["message"]) for e in lines] == [
+        ("3lay.boardy", "info", "Switched on version 2"),
+        ("uvicorn.error", "info", "Application startup complete.")]
+    assert all(e["dd.trace_id"] == trace for e in lines)

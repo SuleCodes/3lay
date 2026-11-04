@@ -24,7 +24,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install -r requirements.txt
 
-COPY settings.py ./
+COPY settings.py observability.py ./
 COPY orchy ./orchy
 COPY obed ./obed
 COPY rules ./rules
@@ -32,9 +32,17 @@ COPY noti ./noti
 COPY store ./store
 COPY jobs ./jobs
 
+# Datadog: serverless-init wraps the process and sends its traces, logs and
+# metrics to Datadog; ddtrace-run turns on tracing (FastAPI, httpx, SQL,
+# LangChain/LangGraph and LLM Observability). Both are configured by the
+# container's DD_* environment variables (see the README's "Observability");
+# with DD_TRACE_ENABLED unset, nothing is traced and the app runs as before.
+COPY --from=datadog/serverless-init:1 /datadog-init /app/datadog-init
+
 # Don't run as root.
 RUN useradd --create-home --uid 10001 appuser
 USER appuser
 
 # One execution: process the waiting queue messages, then exit.
-CMD ["python", "-m", "jobs.ingest"]
+ENTRYPOINT ["/app/datadog-init"]
+CMD ["ddtrace-run", "python", "-m", "jobs.ingest"]

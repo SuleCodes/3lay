@@ -254,3 +254,11 @@ def test_offline_runs_are_not_recorded(email_to_rolepay, fake_model):
 
     assert result.final_state["status"] == "completed"
     assert not result.recorded
+
+
+def test_the_run_records_its_correlation_id(database):
+    start_event(database, event_id="evt-2", run=1, user_id="u1", case_ref="evt-2",
+                received_at=RECEIVED, config_version=1, trace_id="4bf92f3577b34da6a3ce929d0e0e4736")
+
+    [event] = rows(database, events)
+    assert event.trace_id == "4bf92f3577b34da6a3ce929d0e0e4736"

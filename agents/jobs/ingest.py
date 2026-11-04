@@ -41,6 +41,7 @@ from typing import Any
 
 from azure.core.exceptions import ResourceNotFoundError
 
+from observability import configure_logging, continue_trace, tag
 from orchy.runner import process_event
 from settings import load_settings
 from store.configurations import ConfigurationNotFound
@@ -96,11 +97,30 @@ def poison(poison_queue, message, reason):
     }))
 
 
+def traceparent_of(message):
+    """The trace the ingest function started for this email, if the message carries one."""
+    try:
+        value = json.loads(message.content).get("traceparent")
+    except (ValueError, AttributeError, TypeError):
+        return None
+    return value if isinstance(value, str) else None
+
+
 def handle(message, clients, raw_container, *, run=process_event):
     """Processes one message. Returns what happened: "done", "skipped", "poisoned" or "retry".
 
+    Runs inside the email's trace: the ingest function puts its traceparent in
+    the message (there are no headers on a queue), and everything below,
+    Orchy's nodes, model calls, the webhook, joins that trace (observability.py).
     run is the event runner; tests pass a fake.
     """
+    with continue_trace(traceparent_of(message), "ingest.message", resource="ingest-jobs",
+                        **{"queue.message_id": message.id,
+                           "queue.dequeue_count": message.dequeue_count}):
+        return _handle(message, clients, raw_container, run=run)
+
+
+def _handle(message, clients, raw_container, *, run):
     if message.dequeue_count > MAX_ATTEMPTS:
         poison(clients.poison_queue, message, f"Failed {MAX_ATTEMPTS} times")
         clients.queue.delete_message(message)
@@ -108,6 +128,7 @@ def handle(message, clients, raw_container, *, run=process_event):
 
     try:
         job = parse(message, raw_container)
+        tag(**{"event.id": job["ingest_id"], "customer.username": username_of(job["client"])})
         with tempfile.TemporaryDirectory() as folder:
             email_path = Path(folder) / "email.eml"
             email_path.write_bytes(
@@ -170,19 +191,29 @@ def ensure_queue(queue_client):
 
 
 def main():
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
-    load_settings()
-    clients = connect()
-    ensure_queue(clients.poison_queue)
-    raw_container = os.environ.get("RAW_CONTAINER_NAME", "raw-ingest")
+    """One execution: load settings, process the waiting messages, exit.
 
-    outcomes = []
-    for message in clients.queue.receive_messages(messages_per_page=1,
-                                                  visibility_timeout=VISIBILITY_TIMEOUT,
-                                                  max_messages=MAX_MESSAGES_PER_EXECUTION):
-        outcomes.append(handle(message, clients, raw_container))
-    log.info("Processed %d message(s): %s", len(outcomes),
-             {o: outcomes.count(o) for o in sorted(set(outcomes))})
+    The execution is one trace ("orchy.execution"): loading settings, reading
+    secrets and polling the queue are its spans, instead of each Azure call
+    being a trace of its own. Each message is a separate trace (handle), which
+    continues its email's trace from the Worker: one trace per email.
+    """
+    configure_logging()
+    with continue_trace(None, "orchy.execution", resource="caj-3lay-orchy"):
+        load_settings()
+        clients = connect()
+        ensure_queue(clients.poison_queue)
+        raw_container = os.environ.get("RAW_CONTAINER_NAME", "raw-ingest")
+
+        outcomes = []
+        for message in clients.queue.receive_messages(messages_per_page=1,
+                                                      visibility_timeout=VISIBILITY_TIMEOUT,
+                                                      max_messages=MAX_MESSAGES_PER_EXECUTION):
+            outcomes.append(handle(message, clients, raw_container))
+        counts = {o: outcomes.count(o) for o in sorted(set(outcomes))}
+        tag(**{"messages.processed": len(outcomes),
+               **{f"messages.{outcome}": count for outcome, count in counts.items()}})
+        log.info("Processed %d message(s): %s", len(outcomes), counts)
     # A non-zero exit marks the execution as failed in the portal when anything needs a retry.
     return 1 if "retry" in outcomes else 0
 

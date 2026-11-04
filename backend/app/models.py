@@ -189,6 +189,9 @@ class Event(Base):
     # caused by 3lay (processing_error, processing_timeout) aren't.
     billable: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     envelope: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    # The correlation id: the W3C trace id of this run, i.e. its whole trace in
+    # Datadog, from the email arriving to the webhook (agents/observability.py).
+    trace_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
     personal_data_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),
                                                                nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)

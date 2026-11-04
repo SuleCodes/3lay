@@ -70,6 +70,7 @@ events = Table(
     Column("output_tokens", Integer),
     Column("billable", Boolean),
     Column("envelope", JSON),  # JSONB in Postgres
+    Column("trace_id", String),  # the correlation id: this run's trace in Datadog
     Column("personal_data_expires_at", DateTime(timezone=True), nullable=False),
     Column("created_at", DateTime(timezone=True), nullable=False),
     Index("uq_events_event_id_run", "event_id", "run", unique=True),

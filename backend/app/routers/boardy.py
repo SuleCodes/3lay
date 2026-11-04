@@ -32,6 +32,7 @@ from app.schemas import (
     BoardyFeedbackIn,
     BoardyMessageIn,
 )
+from app.observability import tag
 from app.services import boardy
 
 router = APIRouter(prefix="/boardy/conversations", tags=["boardy"])
@@ -49,6 +50,7 @@ def _conversation(db: Session, user: User, conversation_id: str) -> BoardyConver
     conversation = db.get(BoardyConversation, conversation_id)
     if conversation is None or conversation.user_id != user.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
+    tag(**{"boardy.conversation_id": conversation.id})
     return conversation
 
 

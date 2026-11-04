@@ -49,9 +49,11 @@ def is_billable(status, error_code):
 
 # Every argument after engine is keyword-only, so callers have to name each one.
 def start_event(engine, *, event_id, run, user_id, case_ref,  # pylint: disable=too-many-arguments
-                received_at, config_version, now=None):
+                received_at, config_version, trace_id=None, now=None):
     """Records the run as "processing". Returns the row's id, or None if this
-    event_id + run has been recorded already (then the run must be skipped)."""
+    event_id + run has been recorded already (then the run must be skipped).
+
+    trace_id is the correlation id (observability.py): the run's whole trace in Datadog."""
     now = now or datetime.now(timezone.utc)
     received_at = as_datetime(received_at)
     row_id = str(uuid.uuid4())
@@ -65,7 +67,7 @@ def start_event(engine, *, event_id, run, user_id, case_ref,  # pylint: disable=
             connection.execute(events.insert().values(
                 id=row_id, event_id=event_id, run=run, user_id=user_id, case_ref=case_ref,
                 received_at=received_at, started_at=now, status="processing",
-                config_version=config_version,
+                config_version=config_version, trace_id=trace_id,
                 personal_data_expires_at=received_at + PERSONAL_DATA_RETENTION,
                 created_at=now))
     except IntegrityError:
