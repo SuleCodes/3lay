@@ -5,8 +5,6 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "build:deploy": "node scripts/build-deploy.mjs",
-    "deploy": "npx --yes @azure/static-web-apps-cli deploy ./out --env production",
     "lint": "eslint"
   },
   "dependencies": {
@@ -25,5 +23,9 @@
     "eslint-config-next": "16.3.6",
     "tailwindcss": "^4",
     "typescript": "^5"
+  },
+  "engines": {
+    "node": ">=24",
+    "npm": ">=11.21.0"
   }
 }

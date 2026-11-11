@@ -1,0 +1,19 @@
+# Keep secrets, dependencies and build output out of the upload: `az acr build`
+# uploads this whole folder first. .env.local holds the App Configuration
+# connection string and a local API address: it must never be in the image.
+# No trailing "/" on folder rules: az acr build ignores those (Docker doesn't).
+.env
+.env.*
+node_modules
+.next
+out
+coverage
+scripts
+*.tsbuildinfo
+npm-debug.log*
+Dockerfile
+.dockerignore
+README.md
+AGENTS.md
+CLAUDE.md
+.vscode

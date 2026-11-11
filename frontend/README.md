@@ -1,9 +1,10 @@
 # Frontend
 
 Next.js (App Router) + Tailwind. Every page runs in the browser and talks to
-the backend API, so the app builds to a **plain static site**
-(`output: "export"` in `next.config.ts`). It's hosted on **Azure Static Web
-Apps (Free plan)** at `app.3lay.live`.
+the backend API with the session cookie. It runs as a small **Node.js server**
+(`output: "standalone"` in `next.config.ts`) in an **Azure Container App**,
+`ca-3lay-web`, at `app.3lay.live`, so pages can have dynamic routes such as
+`/events/[id]` (the address in every webhook's `dashboard_url`).
 
 > This version of Next.js has breaking changes from older ones. See
 > `AGENTS.md`, and the docs in `node_modules/next/dist/docs/`.
@@ -23,91 +24,64 @@ in `.env.local` keeps local dev on your local backend, while App
 Configuration holds the deployed API URL. Restart `npm run dev` after
 changing it.
 
-Routes end in `/` (`trailingSlash: true`); `/login` redirects to `/login/`.
-
-### Static export rules
-
-Because the app is a static export, these Next.js features **can't be used**:
-route handlers (`app/**/route.ts`), server actions, `cookies()` and
-`headers()`, rewrites, redirects and headers in `next.config`, proxy and
-middleware, ISR, and `next/image` with the default loader. Fetch data from the
-backend API in client components instead. `next dev` raises an error if one
-of them is used. The full list is in
-`node_modules/next/dist/docs/01-app/02-guides/static-exports.md`.
+Data still comes from the API in client components: the session cookie
+belongs to `api.3lay.live`, so the Next.js server never sees it. Server-side
+features (route handlers, `headers()` in `next.config`, dynamic routes) are
+available, but nothing relies on the server knowing who's signed in.
 
 ## Deploying
 
 | | |
 |---|---|
-| Host | Azure Static Web App (Free plan), resource group `rg-3lay-prod` |
-| URL | `https://app.3lay.live` (custom domain), plus the default `*.azurestaticapps.net` address |
-| Build output | `out/` |
-| API it calls | `FRONTEND:NEXT_PUBLIC_API_URL` from App Configuration, **baked in at build time** |
+| Host | Azure Container App `ca-3lay-web`, environment `cae-3lay-prod`, resource group `rg-3lay-prod` |
+| URL | `https://app.3lay.live` (custom domain, managed certificate) |
+| Image | `containerreg3lay.azurecr.io/3lay-web`, built by `Dockerfile` |
+| Identity | `id-3lay-web` (user-assigned), with **AcrPull** on the registry only: the frontend needs no other Azure access |
+| API it calls | `NEXT_PUBLIC_API_URL`, **baked in at build time** (a build argument) |
 
-### Build
+### Build and release
 
-```bash
-npm run build:deploy
-```
-
-This is a production build that **ignores the `.env.local` override** of
-`NEXT_PUBLIC_API_URL` and uses App Configuration's value. The script
-(`scripts/build-deploy.mjs`) then checks the output: it **refuses** if the
-build references `localhost`, or contains no HTTPS API URL, so a local
-setting can't accidentally ship.
-
-Don't deploy the output of plain `npm run build`. It uses your `.env.local`.
-
-### Deploy
-
-The deploy command uploads `out/` to the Static Web App, using its
-**deployment token** (Azure portal → the Static Web App → **Overview** →
-**Manage deployment token**). Keep the token out of files and git: set it in
-your terminal session, then deploy.
-
-PowerShell:
-
-```powershell
-$env:SWA_CLI_DEPLOYMENT_TOKEN = "<deployment token>"
-npm run deploy
-```
-
-bash:
+From `frontend/`, build the image in Azure (no local Docker needed). The API
+address is passed in; the Dockerfile refuses anything but `https://`, so a
+local address can't ship:
 
 ```bash
-export SWA_CLI_DEPLOYMENT_TOKEN="<deployment token>"
-npm run deploy
+az acr build --registry containerreg3lay --image 3lay-web:latest --build-arg NEXT_PUBLIC_API_URL=https://api.3lay.live --no-logs .
 ```
 
-`npm run deploy` runs the Static Web Apps CLI through `npx`; there's nothing
-to install. The site updates within a minute. If the token leaks, reset it
-from the same **Manage deployment token** screen.
+Then roll the app onto it (a new revision; the old one keeps serving until
+the new one is ready):
 
-### Release checklist
+```bash
+az containerapp update -n ca-3lay-web -g rg-3lay-prod --image containerreg3lay.azurecr.io/3lay-web:latest
+```
 
-1. If the API URL changed, update `FRONTEND:NEXT_PUBLIC_API_URL` in App
-   Configuration first. It's baked in at build time.
-2. `npm run build:deploy`, and check it ends with `build:deploy OK`.
-3. `npm run deploy`.
-4. Open `https://app.3lay.live` and sign in.
+`.dockerignore` keeps `.env.local` (it has the App Configuration connection
+string), `node_modules` and build output out of the upload. Its folder rules
+have no trailing `/`: `az acr build` ignores those.
+
+Locally, the same production build runs with:
+
+```bash
+NEXT_PUBLIC_API_URL=https://api.3lay.live npx next build
+```
+
+then `node .next/standalone/server.js` after copying `.next/static` and
+`public` into `.next/standalone` (the Dockerfile does this).
 
 ### Hosting config
 
-`public/staticwebapp.config.json` is copied into `out/`, and tells Static Web
-Apps to:
-- treat `/dashboard` and `/dashboard/` alike (`trailingSlash: auto`);
-- serve `404.html` for unknown paths;
-- send basic security headers.
+Security headers are set in `next.config.ts` (`headers()`). `/dashboard/`
+redirects to `/dashboard`, so links from the old static site keep working.
 
 ### Sign-in needs the API on the same site
 
 The session cookie is only sent when the frontend and the API are on the
 **same site**: `app.3lay.live` and `api.3lay.live` are, but
-`*.azurestaticapps.net` and `*.azurecontainerapps.io` aren't. So, for signing
-in to work in production:
-- `FRONTEND:NEXT_PUBLIC_API_URL` = `https://api.3lay.live`;
+`*.azurecontainerapps.io` isn't. So, for signing in to work in production:
+- the image is built with `NEXT_PUBLIC_API_URL=https://api.3lay.live`;
 - `BACKEND:FRONTEND_URL` = `https://app.3lay.live`;
 - the session cookie is marked `secure`.
 
-Browsing the site via its default `*.azurestaticapps.net` URL works, but
-signing in there won't.
+Browsing the app via its default `*.azurecontainerapps.io` address works,
+but signing in there won't.

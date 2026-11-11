@@ -20,8 +20,9 @@ const APP_CONFIG_PREFIX = "FRONTEND:";
  * before this file runs) or as a real env var -- is kept, and App
  * Configuration only fills in what's missing. So e.g. NEXT_PUBLIC_API_URL in
  * .env.local points a local dev server at a local backend while the shared
- * config keeps the deployed URL. A deployed build has no .env.local, so it
- * gets App Configuration's values.
+ * config keeps the deployed URL. The deployed image is built with
+ * NEXT_PUBLIC_API_URL passed in as a build argument (see Dockerfile), and no
+ * .env.local or connection string, so App Configuration isn't read there.
  */
 async function loadAppConfiguration(): Promise<void> {
   const connectionString = process.env.APP_CONFIG_CONNECTION_STRING;
@@ -43,14 +44,25 @@ async function loadAppConfiguration(): Promise<void> {
 export default async function config(): Promise<NextConfig> {
   await loadAppConfiguration();
   return {
-    // The app is entirely client-side (all data comes from the backend API),
-    // so `next build` emits a plain static site into out/, hosted on Azure
-    // Static Web Apps. This rules out server-only features -- route
-    // handlers, server actions, cookies(), rewrites/redirects, default image
-    // optimization; see next/dist/docs/01-app/02-guides/static-exports.md.
-    output: "export",
-    // Emit /dashboard/index.html rather than /dashboard.html, so every route
-    // is a folder any static host serves without rewrite rules.
-    trailingSlash: true,
+    // Runs as a small Node.js server (Azure Container Apps, ca-3lay-web; see
+    // Dockerfile), so pages can have dynamic routes like /events/[id]: the
+    // address in every webhook's dashboard_url. `standalone` bundles just what
+    // the server needs into .next/standalone. Pages still fetch their data in
+    // the browser from the API, with its session cookie.
+    output: "standalone",
+    // `next dev` only: other addresses this machine is opened by (e.g. its LAN
+    // IP, to try the app from a phone). localhost is always allowed.
+    allowedDevOrigins: ["192.168.100.162"],
+    async headers() {
+      return [{ source: "/:path*", headers: SECURITY_HEADERS }];
+    },
   };
 }
+
+// Sent with every page (they were set by Azure Static Web Apps before).
+const SECURITY_HEADERS = [
+  { key: "X-Content-Type-Options", value: "nosniff" },
+  { key: "X-Frame-Options", value: "DENY" },
+  { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+  { key: "Strict-Transport-Security", value: "max-age=31536000" },
+];

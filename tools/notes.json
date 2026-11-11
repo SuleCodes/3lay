@@ -1,5 +1,5 @@
 {
-  "savedAt": "2026-10-30T17:12:17.402+00:00",
+  "savedAt": "2026-11-04T11:27:50.295+00:00",
   "notes": [
     {
       "id": "0510113e-9eaf-42de-990e-c3ddf80b9fef",
@@ -470,6 +470,16 @@
       "done": false,
       "createdAt": "2026-10-30T17:12:17.402+00:00",
       "description": "The first Datadog API key was pasted into a chat on 2026-10-30. Once tracing works, regenerate it in Datadog (Organization Settings > API Keys), update the Key Vault secret datadog-api-key, and restart ca-3lay-api (the job picks it up on its next execution)."
+    },
+    {
+      "id": "7ce51b23-660d-4640-bd7c-485fadc473dc",
+      "title": "At the dashboard deploy: commit, rebuild job image, regenerate Datadog key",
+      "type": "task",
+      "priority": "high",
+      "date": "2026-11-04",
+      "done": false,
+      "createdAt": "2026-11-04T11:27:50.295+00:00",
+      "description": "Do these together when deploying the dashboard changes (Seth, 2026-11-04): 1) commit the uncommitted work (JSON logs, orchy.execution traces, .dockerignore trailing-slash fixes); 2) rebuild the job image from agents/ (az acr build --registry containerreg3lay --image 3lay-agents:latest --no-logs .) so the orchy.execution traces go live; 3) regenerate the Datadog API key (it was pasted in chat), update Key Vault secret datadog-api-key, restart ca-3lay-api."
     }
   ]
 }

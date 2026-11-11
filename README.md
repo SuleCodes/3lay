@@ -177,7 +177,7 @@ migrations.
 | Backend | Container App `ca-3lay-api` at `https://api.3lay.live` (image `containerreg3lay.azurecr.io/3lay-backend`) |
 | Agents | Container Apps job `caj-3lay-orchy`, identity `id-3lay-orchy` (image `containerreg3lay.azurecr.io/3lay-agents`); see [agents/DEPLOY.md](agents/DEPLOY.md) |
 | Secrets | Key Vault `vault3lay`, referenced from App Configuration |
-| Frontend | Azure Static Web App (Free plan) at `app.3lay.live`; see [frontend/README.md](frontend/README.md#deploying) |
+| Frontend | Container App `ca-3lay-web` at `app.3lay.live` (image `containerreg3lay.azurecr.io/3lay-web`); see [frontend/README.md](frontend/README.md#deploying) |
 | Email Worker | Cloudflare Worker `3lay-cell-82f0` |
 | Ingest email domain | `in.3lay.live`, a catch-all routed to the Worker. Mail to `@3lay.live` itself is not ingested. |
 

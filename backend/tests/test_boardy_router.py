@@ -315,3 +315,15 @@ def test_api_logs_are_json_on_stdout_with_the_requests_correlation_id(capsys):
         ("3lay.boardy", "info", "Switched on version 2"),
         ("uvicorn.error", "info", "Application startup complete.")]
     assert all(e["dd.trace_id"] == trace for e in lines)
+
+
+def test_a_refused_cors_preflight_is_logged_not_silent(api, caplog):
+    import logging  # pylint: disable=import-outside-toplevel
+
+    logging.getLogger("3lay.http").propagate = True  # configure_logging may have turned it off
+    with caplog.at_level(logging.WARNING, logger="3lay.http"):
+        response = api.options("/auth/request-link", headers={
+            "Origin": "http://192.168.100.162:3000", "Access-Control-Request-Method": "POST"})
+
+    assert response.status_code == 400
+    assert "http://192.168.100.162:3000" in caplog.text and "FRONTEND_URL" in caplog.text

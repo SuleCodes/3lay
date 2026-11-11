@@ -68,10 +68,22 @@ class CorrelationMiddleware(BaseHTTPMiddleware):
         token = _correlation_id.set(value)
         try:
             response = await call_next(request)
+            _log_refused_preflight(request, response)
         finally:
             _correlation_id.reset(token)
         response.headers[CORRELATION_HEADER] = value
         return response
+
+
+def _log_refused_preflight(request, response) -> None:
+    """The CORS middleware refuses a browser's preflight from an origin it doesn't
+    allow with a bare 400, before any endpoint runs: say so, or it's invisible."""
+    origin = request.headers.get("origin")
+    if request.method == "OPTIONS" and response.status_code == 400 and origin:
+        logging.getLogger("3lay.http").warning(
+            "Refused a browser request from origin %s to %s: it isn't an allowed origin "
+            "(FRONTEND_URL). Open the app at FRONTEND_URL, or set it to this origin locally.",
+            origin, request.url.path)
 
 
 class JsonFormatter(logging.Formatter):
