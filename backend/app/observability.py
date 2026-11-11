@@ -21,6 +21,7 @@ import sys
 from datetime import datetime, timezone
 
 from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import JSONResponse
 
 CORRELATION_HEADER = "X-Correlation-Id"
 TRACEPARENT = re.compile(r"^00-([0-9a-f]{32})-[0-9a-f]{16}-[0-9a-f]{2}$")
@@ -68,22 +69,33 @@ class CorrelationMiddleware(BaseHTTPMiddleware):
         token = _correlation_id.set(value)
         try:
             response = await call_next(request)
-            _log_refused_preflight(request, response)
+        except Exception:  # pylint: disable=broad-exception-caught
+            # An error nothing else handled (e.g. a database error). Logged with its
+            # stack and correlation id, and answered here, inside the CORS layer, so
+            # the browser can read it and show the reference.
+            logging.getLogger("3lay.http").exception(
+                "Unhandled error on %s %s", request.method, request.url.path)
+            response = JSONResponse(status_code=500, content={
+                "detail": "Something went wrong on our side. We've logged it."})
         finally:
             _correlation_id.reset(token)
         response.headers[CORRELATION_HEADER] = value
         return response
 
 
-def _log_refused_preflight(request, response) -> None:
-    """The CORS middleware refuses a browser's preflight from an origin it doesn't
-    allow with a bare 400, before any endpoint runs: say so, or it's invisible."""
-    origin = request.headers.get("origin")
-    if request.method == "OPTIONS" and response.status_code == 400 and origin:
-        logging.getLogger("3lay.http").warning(
-            "Refused a browser request from origin %s to %s: it isn't an allowed origin "
-            "(FRONTEND_URL). Open the app at FRONTEND_URL, or set it to this origin locally.",
-            origin, request.url.path)
+class RefusedPreflightLogger(BaseHTTPMiddleware):
+    """Logs a browser preflight the CORS layer refused. CORS answers those with a
+    bare 400 before any endpoint runs, so without this they're invisible."""
+
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+        origin = request.headers.get("origin")
+        if request.method == "OPTIONS" and response.status_code == 400 and origin:
+            logging.getLogger("3lay.http").warning(
+                "Refused a browser request from origin %s to %s: it isn't an allowed origin "
+                "(FRONTEND_URL). Open the app at FRONTEND_URL, or set it to this origin locally.",
+                origin, request.url.path)
+        return response
 
 
 class JsonFormatter(logging.Formatter):

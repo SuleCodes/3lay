@@ -106,3 +106,82 @@ export interface BoardyConversationSummary {
   created_at: string;
   updated_at: string;
 }
+
+// Events: the client's processed emails (/events, /events/[id]).
+
+export type Verdict = "accepted" | "needs_review" | "rejected";
+
+export interface EventSummary {
+  event_id: string;
+  run: number;
+  received_at: string;
+  finished_at: string | null;
+  sender: string | null;
+  status: "processing" | "completed" | "failed";
+  error_code: string | null;
+  documents: number;
+  verdicts: Record<Verdict, number>;
+  // "none": no webhook wanted this kind of event.
+  delivery: "delivered" | "failed" | "none" | "pending";
+  // The trace id: what to quote to 3lay.
+  reference: string | null;
+}
+
+export interface EventPage {
+  events: EventSummary[];
+  next_cursor: string | null;
+}
+
+export interface EventDocument {
+  name: string;
+  content_type: string;
+  location: string | null;
+  forwarded_from: string | null;
+  verdict: Verdict | null;
+  reasons: string[];
+  // The extracted fields; null when rejected or deleted after 90 days.
+  data: Record<string, unknown> | null;
+  error_code: string | null;
+}
+
+export interface TimelineStep {
+  stage: "received" | "read" | "extracted" | "checked" | "delivered";
+  label: string;
+  at: string;
+  duration_ms: number | null;
+  outcome: "ok" | "failed" | "retried";
+  detail: string | null;
+}
+
+export interface DeliveryAttempt {
+  attempted_at: string;
+  destination_id: string;
+  url: string;
+  attempt: number;
+  status: "delivered" | "retry" | "gave_up";
+  http_status: number | null;
+  response_excerpt: string | null;
+  error: string | null;
+  duration_ms: number | null;
+  trigger: "automatic" | "manual";
+  webhook_id: string;
+}
+
+export interface EventDetail {
+  event_id: string;
+  run: number;
+  received_at: string;
+  finished_at: string | null;
+  sender: string | null;
+  status: EventSummary["status"];
+  error_code: string | null;
+  error_message: string | null;
+  config_version: number | null;
+  reference: string | null;
+  data_deleted: boolean;
+  documents: EventDocument[];
+  timeline: TimelineStep[];
+  deliveries: DeliveryAttempt[];
+  can_resend: boolean;
+  resend_unavailable_reason: string | null;
+}

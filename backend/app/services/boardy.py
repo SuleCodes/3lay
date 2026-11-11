@@ -158,3 +158,25 @@ def rotate_secret(user_id, destination_id):
                             detail="Couldn't create a new secret right now. Try again later.") from exc
     logger.info("Rotated the secret of %s for %s", destination_id, user_id)
     return secret
+
+
+def resend_event(user_id, event_id, live_destinations):
+    """Resends an event's webhook once to each live webhook that wants it (Resend in
+    the dashboard). Returns the attempts. Same agents package as the pipeline's
+    deliveries (agents/noti/resend.py), with the backend's database connection.
+    Not found is a 404; any other refusal a 409 with the reason for the client.
+    """
+    _load_agent_settings()  # SECRETS_ENCRYPTION_KEY, to sign with the webhook's secret
+    # pylint: disable=import-outside-toplevel
+    import httpx
+
+    from app.database import engine
+    from noti.resend import ResendNotFound, ResendRefused, resend
+
+    try:
+        with httpx.Client(follow_redirects=False) as client:  # as for every delivery
+            return resend(engine, user_id, event_id, live_destinations, client)
+    except ResendNotFound as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except ResendRefused as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc

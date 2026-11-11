@@ -170,3 +170,78 @@ class WebhooksOut(BaseModel):
 class RotatedSecretOut(BaseModel):
     webhook: WebhookOut
     secret: str  # shown once
+
+
+# Events: the client's processed emails, for the dashboard (app/routers/events.py)
+
+
+class EventSummaryOut(BaseModel):
+    event_id: str
+    run: int
+    received_at: datetime
+    finished_at: datetime | None
+    sender: str | None
+    status: str  # "processing", "completed" or "failed"
+    error_code: str | None
+    documents: int
+    verdicts: dict[str, int]  # accepted / needs_review / rejected -> count
+    delivery: str  # "delivered", "failed", "none" (no webhook wanted it) or "pending"
+    reference: str | None  # the trace id, to quote to 3lay
+
+
+class EventPageOut(BaseModel):
+    events: list[EventSummaryOut]
+    next_cursor: str | None  # pass back as ?cursor= for the next (older) page
+
+
+class EventDocumentOut(BaseModel):
+    name: str
+    content_type: str
+    location: str | None
+    forwarded_from: str | None
+    verdict: str | None
+    reasons: list[str]  # why it isn't accepted, in words
+    data: dict | None  # the extracted fields; null when rejected or deleted after 90 days
+    error_code: str | None
+
+
+class TimelineStepOut(BaseModel):
+    stage: str  # "received", "read", "extracted", "checked", "delivered"
+    label: str
+    at: datetime
+    duration_ms: int | None
+    outcome: str  # "ok", "failed", "retried"
+    detail: str | None
+
+
+class DeliveryAttemptOut(BaseModel):
+    attempted_at: datetime
+    destination_id: str
+    url: str
+    attempt: int
+    status: str  # "delivered", "retry", "gave_up"
+    http_status: int | None
+    response_excerpt: str | None
+    error: str | None
+    duration_ms: int | None
+    trigger: str  # "automatic" or "manual" (Resend)
+    webhook_id: str
+
+
+class EventDetailOut(BaseModel):
+    event_id: str
+    run: int
+    received_at: datetime
+    finished_at: datetime | None
+    sender: str | None
+    status: str
+    error_code: str | None
+    error_message: str | None
+    config_version: int | None
+    reference: str | None
+    data_deleted: bool  # personal data removed after 90 days
+    documents: list[EventDocumentOut]
+    timeline: list[TimelineStepOut]
+    deliveries: list[DeliveryAttemptOut]
+    can_resend: bool
+    resend_unavailable_reason: str | None

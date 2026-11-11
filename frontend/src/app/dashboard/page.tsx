@@ -1,12 +1,16 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ApiError, apiFetch } from "@/lib/api";
+import { DELIVERY_LABEL, VERDICT_LABEL, VERDICT_TONE, when } from "@/lib/format";
 import type {
   ApiKey,
   ApiKeyCreatedResponse,
   DeleteAccountResponse,
+  EventPage,
+  EventSummary,
   RotatedSecret,
   User,
   Webhooks,
@@ -31,6 +35,7 @@ export default function DashboardPage() {
   const [addressCopied, setAddressCopied] = useState(false);
 
   const [webhooks, setWebhooks] = useState<Webhooks | null>(null);
+  const [recent, setRecent] = useState<EventSummary[] | null>(null);
   const [webhookError, setWebhookError] = useState<string | null>(null);
   const [confirmingRotate, setConfirmingRotate] = useState<string | null>(null);
   const [rotating, setRotating] = useState(false);
@@ -46,6 +51,14 @@ export default function DashboardPage() {
   async function loadKeys() {
     const data = await apiFetch<ApiKey[]>("/api-keys");
     setKeys(data);
+  }
+
+  async function loadRecent() {
+    try {
+      setRecent((await apiFetch<EventPage>("/events?limit=5")).events);
+    } catch {
+      setRecent([]); // the card is a convenience: /events shows the error properly
+    }
   }
 
   async function loadWebhooks() {
@@ -84,7 +97,7 @@ export default function DashboardPage() {
           return;
         }
         setUser(u);
-        await Promise.all([loadKeys(), loadWebhooks()]);
+        await Promise.all([loadKeys(), loadWebhooks(), loadRecent()]);
       })
       .catch(() => router.replace("/login"))
       .finally(() => setLoading(false));
@@ -174,6 +187,48 @@ export default function DashboardPage() {
           >
             Open
           </button>
+        </section>
+
+        <section className="mt-10">
+          <div className="flex items-center justify-between gap-4">
+            <h2 className="text-sm font-medium text-neutral-300">Recent activity</h2>
+            <Link href="/events" className="text-xs text-neutral-400 hover:text-neutral-200">
+              All events →
+            </Link>
+          </div>
+          <div className="mt-3 divide-y divide-neutral-900 rounded-md border border-neutral-900">
+            {recent && recent.length === 0 && (
+              <p className="p-4 text-sm text-neutral-500">
+                No events yet. Email a document to your forwarding address to see it here.
+              </p>
+            )}
+            {recent?.map((e) => (
+              <Link
+                key={`${e.event_id}-${e.run}`}
+                href={`/events/${encodeURIComponent(e.event_id)}`}
+                className="flex flex-wrap items-center justify-between gap-2 p-3 hover:bg-neutral-900/60"
+              >
+                <span className="text-sm text-neutral-300">
+                  {when(e.received_at)}
+                  <span className="ml-2 text-xs text-neutral-500">{e.sender ?? ""}</span>
+                </span>
+                <span className="flex items-center gap-2">
+                  {e.status === "failed" ? (
+                    <span className="text-xs text-red-400">Failed</span>
+                  ) : (
+                    (Object.keys(VERDICT_LABEL) as (keyof EventSummary["verdicts"])[])
+                      .filter((v) => e.verdicts[v] > 0)
+                      .map((v) => (
+                        <span key={v} className={`rounded border px-1.5 py-0.5 text-xs ${VERDICT_TONE[v]}`}>
+                          {e.verdicts[v]} {VERDICT_LABEL[v].toLowerCase()}
+                        </span>
+                      ))
+                  )}
+                  <span className={`text-xs ${DELIVERY_LABEL[e.delivery].tone}`}>{DELIVERY_LABEL[e.delivery].text}</span>
+                </span>
+              </Link>
+            ))}
+          </div>
         </section>
 
         <section className="mt-10">

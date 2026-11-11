@@ -327,3 +327,23 @@ def test_a_refused_cors_preflight_is_logged_not_silent(api, caplog):
 
     assert response.status_code == 400
     assert "http://192.168.100.162:3000" in caplog.text and "FRONTEND_URL" in caplog.text
+
+
+def test_an_unexpected_error_is_a_readable_500_with_its_reference(api, monkeypatch, caplog):
+    import logging  # pylint: disable=import-outside-toplevel
+
+    from app.routers import events as events_router  # pylint: disable=import-outside-toplevel
+
+    def broken(*_args, **_kwargs):
+        raise RuntimeError('column deliveries.trigger does not exist')
+    monkeypatch.setattr(events_router, "_latest_run", broken)
+    logging.getLogger("3lay.http").propagate = True
+
+    with caplog.at_level(logging.ERROR, logger="3lay.http"):
+        response = api.sign_in("u1").get("/events/evt-1", headers={"Origin": "http://localhost:3000"})
+
+    assert response.status_code == 500
+    assert response.json()["detail"].startswith("Something went wrong on our side")
+    assert len(response.headers["X-Correlation-Id"]) == 32
+    assert response.headers["access-control-allow-origin"] == "http://localhost:3000"  # readable
+    assert "deliveries.trigger" in caplog.text  # the cause is in the log, not the response

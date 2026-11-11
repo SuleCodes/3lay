@@ -1,5 +1,5 @@
 {
-  "savedAt": "2026-11-04T11:27:50.295+00:00",
+  "savedAt": "2026-11-11T17:21:15.885+00:00",
   "notes": [
     {
       "id": "0510113e-9eaf-42de-990e-c3ddf80b9fef",
@@ -164,11 +164,11 @@
     {
       "id": "451e5c90-d191-45f3-b95c-23620bb89f5e",
       "title": "Run dashboard in the frontend",
-      "description": "Roadmap step 6. Client view of events by event_id, a step timeline for failures, the verdict and per-field confidence, and metrics: volume, failure rate, average confidence, delivery success.",
+      "description": "Roadmap step 6. Client view of events by event_id, a step timeline for failures, the verdict and per-field confidence, and metrics: volume, failure rate, average confidence, delivery success. Done 2026-11-11: /events list (filters, cursor paging), /events/[id] (documents, extracted data, timeline, delivery attempts, Resend), Recent activity on the dashboard. Delivery history is per event rather than per webhook.",
       "type": "feature",
       "priority": "medium",
       "date": "2026-10-05",
-      "done": false,
+      "done": true,
       "createdAt": "2026-10-05T14:38:45.531Z"
     },
     {
@@ -244,7 +244,7 @@
     {
       "id": "476d1c68-0c4d-40a3-ad26-5fbf55918ff8",
       "title": "Delivery tracking, retries and resend",
-      "description": "Done: delivery status per destination and attempt (deliveries table), retries within the run, client-set retry waits within 3lay's limits, failed events delivered too. Left: the resend button in the dashboard (and a resend for deliveries that gave up).",
+      "description": "Done: delivery status per destination and attempt (deliveries table), retries within the run, client-set retry waits within 3lay's limits, failed events delivered too. Left: the resend button in the dashboard (and a resend for deliveries that gave up). 2026-11-11: manual Resend built (same webhook-id, live setup URL, one attempt, deliveries.trigger = manual). Still open: bulk resend, scheduled re-delivery of given-up events.",
       "type": "feature",
       "priority": "medium",
       "date": "2026-10-05",
@@ -437,9 +437,9 @@
       "type": "feature",
       "priority": "medium",
       "date": "2026-10-14",
-      "done": false,
+      "done": true,
       "createdAt": "2026-10-14T08:58:10.237+00:00",
-      "description": "Deferred from the Webhooks section (2026-10-14). Show each webhook's recent deliveries from app.deliveries: time, HTTP status, attempts and retries, so a client can debug their endpoint. Needs a read endpoint scoped to the client's events, and paging."
+      "description": "Deferred from the Webhooks section (2026-10-14). Show each webhook's recent deliveries from app.deliveries: time, HTTP status, attempts and retries, so a client can debug their endpoint. Needs a read endpoint scoped to the client's events, and paging. Done 2026-11-11: /events list (filters, cursor paging), /events/[id] (documents, extracted data, timeline, delivery attempts, Resend), Recent activity on the dashboard. Delivery history is per event rather than per webhook."
     },
     {
       "id": "a74b1b48-46f7-4227-8f2e-0dbb7283acdb",

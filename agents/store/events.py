@@ -119,6 +119,7 @@ def delivery_row(event_pk, attempt):
             "destination_id", "url", "webhook_id", "attempt", "status", "http_status",
             "response_excerpt", "error", "duration_ms", "retry_in_seconds")},
         "attempted_at": as_datetime(attempt["attempted_at"]),
+        "trigger": attempt.get("trigger", "automatic"),
     }
 
 

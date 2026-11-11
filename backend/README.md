@@ -483,3 +483,18 @@ Changing a webhook's URL or events is a new configuration version, so it's
 done with Boardy (`/setup`). Secrets are created and encrypted by the agents'
 secret store (agents/store/secrets.py), with the backend's connection.
 
+## Events (the dashboard)
+
+`/events` (app/routers/events.py) is what the dashboard shows of a client's
+processed emails, read from the records the pipeline writes. The customer is
+always the session's user: another client's event is a 404.
+
+| Endpoint | Does |
+|---|---|
+| `GET /events` | the client's events, newest first; filters `status`, `needs_review`, `delivery_failed`, `since`, `until`; paged with `cursor` (from `next_cursor`) and `limit` |
+| `GET /events/{event_id}` | one event's latest run: documents (verdict, reasons, extracted data), a simple timeline, every delivery attempt, and whether it can be resent. The page behind every webhook's `dashboard_url` |
+| `POST /events/{event_id}/resend` | delivers the event again: the same message (same `webhook-id`) to the live setup's webhooks, one attempt each, recorded as `manual` (agents/noti/resend.py). Refused (409, with the reason) within 10 seconds of the last resend, after 90 days, or with no live webhook for it |
+
+Shown to clients: what they need to follow their integration. Not shown: the
+model, tokens or other internals.
+

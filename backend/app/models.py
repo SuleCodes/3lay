@@ -268,6 +268,10 @@ class Delivery(Base):
     attempted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     retry_in_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # "automatic" (the pipeline's delivery and retries) or "manual" (the client
+    # pressed Resend in the dashboard: agents/noti/resend.py).
+    trigger: Mapped[str] = mapped_column(String, nullable=False, default="automatic",
+                                         server_default="automatic")
 
 
 class BoardyConversation(Base):

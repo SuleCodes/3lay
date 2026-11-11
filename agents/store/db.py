@@ -125,6 +125,9 @@ deliveries = Table(
     Column("attempted_at", DateTime(timezone=True), nullable=False),
     Column("duration_ms", Integer),
     Column("retry_in_seconds", Float),
+    # "automatic" (the pipeline's own delivery and retries) or "manual" (the
+    # client pressed Resend in the dashboard: noti/resend.py).
+    Column("trigger", String, nullable=False, server_default="automatic"),
 )
 
 

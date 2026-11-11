@@ -29,7 +29,8 @@ config.get_settings.cache_clear()
 
 from app.database import get_db  # noqa: E402
 from app.main import app  # noqa: E402
-from app.models import BoardyConversation, ClientConfiguration, DestinationSecret, User  # noqa: E402
+from app.models import (BoardyConversation, ClientConfiguration, Delivery,  # noqa: E402
+                        DestinationSecret, Event, EventSource, EventStep, User)
 from app.security import create_session_token  # noqa: E402
 
 
@@ -49,7 +50,8 @@ def db_session():
 
     # (SQLite makes the one-active-version index a plain unique one: one version per client here.)
     tables = [User.__table__, BoardyConversation.__table__, ClientConfiguration.__table__,
-              DestinationSecret.__table__]
+              DestinationSecret.__table__, Event.__table__, EventSource.__table__,
+              EventStep.__table__, Delivery.__table__]
     User.metadata.create_all(engine, tables=tables)
     session = sessionmaker(bind=engine)()
     session.add_all([User(id="u1", email="ops@rolepay.example", username="rolepay-agent"),
